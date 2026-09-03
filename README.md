@@ -38,7 +38,12 @@ Designed with a dual-persona architecture, LUCID serves both everyday users seek
 - **Visual Evasion Resistance:** The model is explicitly instructed to treat text embedded inside images designed to bypass filters as severe security red flags.
 - **Privacy-First Persistence:** Raw user submissions are **never** persisted to the database. Only high-level metadata (timestamp, mode, severity, verdict, and truncated summary) is stored for verified threats.
 
-### 4. SecOps Dashboard (TIQ Mode)
+### 4. Authentication & Multi-Tenancy
+- **Google Sign-In:** Gated entry using Firebase Client Auth SDK.
+- **Route Protection Middleware:** All backend routes verify Firebase ID tokens using `firebase-admin`.
+- **Tenant Scoping (`orgId`):** All incident records, risks, and dashboard queries are partitioned by the authenticated user's UID (`orgId`).
+
+### 5. SecOps Dashboard (TIQ Mode)
 - **Incident Metrics & Trend Analysis:**
   - Top-line stats: Total incidents, Active open issues, High/Critical alerts.
   - 7-Day incident volume trend.
@@ -51,6 +56,12 @@ Designed with a dual-persona architecture, LUCID serves both everyday users seek
 - **Risk Register:**
   - Track institutional security risks with Category, Priority, and Status.
   - Compact three-dot (`⋮`) action menu with inline Edit Modal and confirmation-guarded deletion.
+
+---
+
+## Operations & Runbook
+For full architecture diagrams, sequence flows, input processing lifecycles, and troubleshooting, refer to [`RUNBOOK.md`](./RUNBOOK.md).
+
 
 ---
 

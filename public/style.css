@@ -82,21 +82,31 @@ body {
 }
 
 header {
-    text-align: center;
     margin-bottom: 1rem;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.header-left {
+    text-align: left;
 }
 
 .logo {
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 0.75rem;
     color: var(--primary);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
 }
 
 .logo h1 {
-    font-size: 2rem;
+    font-size: 1.8rem;
     font-weight: 700;
     letter-spacing: -0.5px;
     color: var(--text-primary);
@@ -104,8 +114,55 @@ header {
 
 .subtitle {
     color: var(--text-secondary);
-    font-size: 1.05rem;
+    font-size: 0.95rem;
 }
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.8rem;
+    border-radius: 30px;
+    font-size: 0.85rem;
+}
+
+.user-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--border);
+}
+
+.user-email {
+    color: var(--text-secondary);
+    font-weight: 500;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-signout {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-signout:hover {
+    background: var(--surface-hover);
+    color: var(--dangerous);
+    border-color: var(--dangerous);
+}
+
 
 .input-section {
     background: var(--surface);
@@ -883,5 +940,120 @@ textarea:focus {
 
 .action-menu .menu-item.text-danger {
     color: var(--dangerous);
+}
+
+/* Authentication Overlay & Modal */
+.auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(10, 12, 16, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 1.5rem;
+}
+
+.auth-overlay.hidden {
+    display: none;
+}
+
+.auth-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2.5rem 2rem;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    animation: authFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes authFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(15px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.auth-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: var(--primary);
+}
+
+.auth-logo h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text-primary);
+}
+
+.auth-subtitle {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.auth-desc {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.btn-google {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.85rem;
+    background: #ffffff;
+    color: #1f1f1f;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    max-width: 320px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+    margin-top: 0.5rem;
+}
+
+.btn-google:hover {
+    background: #f1f3f4;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    transform: translateY(-1px);
+}
+
+.btn-google:active {
+    transform: translateY(0);
+}
+
+.auth-error {
+    background: var(--dangerous-bg);
+    border: 1px solid var(--dangerous);
+    color: var(--dangerous);
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    width: 100%;
 }
 

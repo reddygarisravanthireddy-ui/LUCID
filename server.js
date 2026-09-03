@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { VertexAI } = require('@google-cloud/vertexai');
 const { Firestore } = require('@google-cloud/firestore');
+const { initializeApp, getApps } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const sharp = require('sharp');
@@ -11,9 +13,26 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
 
-// Initialize Vertex AI with your Cloud project and location
-const vertex_ai = new VertexAI({project: 'project-c48afffb-501b-4711-a6d', location: 'us-central1'});
-const firestore = new Firestore({ projectId: 'project-c48afffb-501b-4711-a6d' });
+const PROJECT_ID = 'project-c48afffb-501b-4711-a6d';
+
+// Initialize Firebase Admin SDK for authentication verification
+let adminApp;
+try {
+    if (!getApps().length) {
+        adminApp = initializeApp({
+            projectId: PROJECT_ID
+        });
+    } else {
+        adminApp = getApps()[0];
+    }
+    console.log(`[Firebase Admin] Initialized for project: ${PROJECT_ID}`);
+} catch (adminErr) {
+    console.error('[Firebase Admin] Initialization warning/error:', adminErr.message);
+}
+
+// Initialize Vertex AI and Firestore
+const vertex_ai = new VertexAI({ project: PROJECT_ID, location: 'us-central1' });
+const firestore = new Firestore({ projectId: PROJECT_ID });
 const model = 'gemini-2.5-flash';
 
 const apiLimiter = rateLimit({
@@ -22,15 +41,39 @@ const apiLimiter = rateLimit({
     message: { error: 'Too many requests, please try again later.' }
 });
 
-app.post('/api/analyze', apiLimiter, async (req, res) => {
+// Authentication & Scoping Middleware
+const authMiddleware = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.log(`[Auth] Rejected unauthenticated request: ${req.method} ${req.path} - Missing or malformed Authorization header`);
+        return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+    }
+
+    const token = authHeader.split('Bearer ')[1].trim();
+    try {
+        const decodedToken = await getAuth().verifyIdToken(token);
+        req.user = decodedToken;
+        req.orgId = decodedToken.uid; // Single-user-per-org: user UID is the orgId
+        console.log(`[Auth] User authenticated: ${decodedToken.uid} (${decodedToken.email || 'no email'}), orgId: ${req.orgId}`);
+        next();
+    } catch (error) {
+        console.log(`[Auth] Rejected unauthenticated request: ${req.method} ${req.path} - Token verification failed (${error.message})`);
+        return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    }
+};
+
+
+// --- Analysis Endpoint ---
+app.post('/api/analyze', apiLimiter, authMiddleware, async (req, res) => {
     try {
         const { text, mode, imageBase64, sessionId } = req.body;
+        const orgId = req.orgId;
         
         if (!text && !imageBase64) {
             return res.status(400).json({ error: 'Text or image is required' });
         }
 
-        // Instantiate the models
+        // Instantiate the generative model
         const generativeModel = vertex_ai.preview.getGenerativeModel({
             model: model,
             generationConfig: {
@@ -72,7 +115,7 @@ Return your response ONLY as a valid JSON object matching the following structur
              return res.status(400).json({ error: 'Invalid mode' });
         }
 
-        const parts = [{text: prompt}];
+        const parts = [{ text: prompt }];
         if (imageBase64) {
             const buffer = Buffer.from(imageBase64, 'base64');
             if (buffer.length > 8 * 1024 * 1024) return res.status(400).json({ error: 'Image too large (Max 8MB)' });
@@ -84,13 +127,13 @@ Return your response ONLY as a valid JSON object matching the following structur
                     .toBuffer();
                 parts.push({ inlineData: { data: cleanBuffer.toString('base64'), mimeType: 'image/webp' } });
             } catch (err) {
-                console.error('Invalid image upload.');
+                console.error('[Lucid] Invalid image upload.');
                 return res.status(400).json({ error: 'Invalid image format.' });
             }
         }
 
         const request = {
-            contents: [{role: 'user', parts: parts}],
+            contents: [{ role: 'user', parts: parts }],
         };
 
         const responseStream = await generativeModel.generateContent(request);
@@ -106,9 +149,7 @@ Return your response ONLY as a valid JSON object matching the following structur
             return res.status(500).json({ error: 'Failed to process AI response' });
         }
 
-        // Step 2: Fire-and-forget Firestore incident logging.
-        // This is deliberately isolated — a Firestore failure must NEVER block the user from
-        // receiving their analysis result. Errors are logged server-side only.
+        // Step 2: Fire-and-forget Firestore incident logging with orgId scoping
         (async () => {
             try {
                 let shouldCreateIncident = false;
@@ -121,7 +162,9 @@ Return your response ONLY as a valid JSON object matching the following structur
                 }
 
                 if (shouldCreateIncident) {
+                    console.log(`[Firestore] Scoping incident creation to orgId: ${orgId}`);
                     await firestore.collection('incidents').add({
+                        orgId: orgId,
                         timestamp: new Date(),
                         mode: mode,
                         sessionId: sessionId || null,
@@ -135,12 +178,11 @@ Return your response ONLY as a valid JSON object matching the following structur
                     });
                 }
             } catch (firestoreErr) {
-                // Log Firestore error server-side but do NOT affect the user response
                 console.error('[Lucid] Firestore incident logging failed (non-fatal):', firestoreErr.message || firestoreErr);
             }
         })();
 
-        // Step 3: Return Gemini result to client immediately
+        // Step 3: Return Gemini result to client
         res.json(parsedResult);
 
     } catch (error) {
@@ -150,66 +192,111 @@ Return your response ONLY as a valid JSON object matching the following structur
 });
 
 // --- Incidents API Endpoints ---
-app.get('/api/incidents', async (req, res) => {
+app.get('/api/incidents', authMiddleware, async (req, res) => {
     try {
-        let query = firestore.collection('incidents').orderBy('timestamp', 'desc');
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping incidents query to orgId: ${orgId}`);
+        let query = firestore.collection('incidents')
+            .where('orgId', '==', orgId)
+            .orderBy('timestamp', 'desc');
+            
         if (req.query.status) query = query.where('status', '==', req.query.status);
         if (req.query.severity) query = query.where('severity', '==', req.query.severity);
-        // Only return analyst mode incidents for the dashboard (or all if we want to see everything in the dashboard)
-        // Wait, the plan says TIQ mode shows dashboard which has Incidents table. 
-        // We'll leave it as is to show all incidents, but we could filter by mode='analyst' if desired.
         
         const snapshot = await query.get();
         const incidents = [];
         snapshot.forEach(doc => incidents.push({ id: doc.id, ...doc.data() }));
         res.json(incidents);
     } catch (err) {
-        console.error(err);
+        console.error('[Lucid] Failed to fetch incidents:', err);
         res.status(500).json({ error: 'Failed to fetch incidents' });
     }
 });
 
-app.get('/api/my-checks', async (req, res) => {
+app.get('/api/my-checks', authMiddleware, async (req, res) => {
     try {
+        const orgId = req.orgId;
         const sessionId = req.query.sessionId;
-        if (!sessionId) return res.json([]);
+        console.log(`[Firestore] Scoping my-checks query to orgId: ${orgId}, sessionId: ${sessionId || 'any'}`);
         
-        const snapshot = await firestore.collection('incidents')
-            .where('mode', '==', 'everyday')
-            .where('sessionId', '==', sessionId)
-            .orderBy('timestamp', 'desc')
-            .get();
+        let query = firestore.collection('incidents')
+            .where('orgId', '==', orgId)
+            .where('mode', '==', 'everyday');
             
+        if (sessionId) {
+            query = query.where('sessionId', '==', sessionId);
+        }
+        query = query.orderBy('timestamp', 'desc');
+
+        const snapshot = await query.get();
         const checks = [];
         snapshot.forEach(doc => checks.push({ id: doc.id, ...doc.data() }));
         res.json(checks);
     } catch (err) {
-        console.error(err);
+        console.error('[Lucid] Failed to fetch my checks:', err);
         res.status(500).json({ error: 'Failed to fetch my checks' });
     }
 });
 
-app.patch('/api/incidents/:id', async (req, res) => {
+app.patch('/api/incidents/:id', authMiddleware, async (req, res) => {
     try {
-        await firestore.collection('incidents').doc(req.params.id).update(req.body);
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping incident update (${req.params.id}) to orgId: ${orgId}`);
+        const docRef = firestore.collection('incidents').doc(req.params.id);
+        const doc = await docRef.get();
+        
+        if (!doc.exists) {
+            return res.status(404).json({ error: 'Incident not found' });
+        }
+        if (doc.data().orgId !== orgId) {
+            console.log(`[Auth] Forbidden update attempt on incident ${req.params.id} by orgId ${orgId}`);
+            return res.status(403).json({ error: 'Forbidden: You do not own this incident' });
+        }
+        
+        // Disallow modifying orgId
+        const updateData = { ...req.body };
+        delete updateData.orgId;
+        
+        await docRef.update(updateData);
         res.json({ success: true });
     } catch (err) {
+        console.error('[Lucid] Failed to update incident:', err);
         res.status(500).json({ error: 'Failed to update incident' });
     }
 });
 
-app.delete('/api/incidents/:id', async (req, res) => {
+app.delete('/api/incidents/:id', authMiddleware, async (req, res) => {
     try {
-        await firestore.collection('incidents').doc(req.params.id).delete();
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping incident delete (${req.params.id}) to orgId: ${orgId}`);
+        const docRef = firestore.collection('incidents').doc(req.params.id);
+        const doc = await docRef.get();
+        
+        if (!doc.exists) {
+            return res.status(404).json({ error: 'Incident not found' });
+        }
+        if (doc.data().orgId !== orgId) {
+            console.log(`[Auth] Forbidden delete attempt on incident ${req.params.id} by orgId ${orgId}`);
+            return res.status(403).json({ error: 'Forbidden: You do not own this incident' });
+        }
+        
+        await docRef.delete();
         res.json({ success: true });
     } catch (err) {
+        console.error('[Lucid] Failed to delete incident:', err);
         res.status(500).json({ error: 'Failed to delete incident' });
     }
 });
 
-app.get('/api/incidents/export', async (req, res) => {
+app.get('/api/incidents/export', authMiddleware, async (req, res) => {
     try {
-        const snapshot = await firestore.collection('incidents').orderBy('timestamp', 'desc').get();
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping incident export to orgId: ${orgId}`);
+        const snapshot = await firestore.collection('incidents')
+            .where('orgId', '==', orgId)
+            .orderBy('timestamp', 'desc')
+            .get();
+            
         let csv = 'ID,Timestamp,Mode,InputType,Verdict/Classification,Severity,Status,Notes\n';
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -221,56 +308,105 @@ app.get('/api/incidents/export', async (req, res) => {
         res.attachment('incidents.csv');
         res.send(csv);
     } catch (err) {
+        console.error('[Lucid] Failed to export incidents:', err);
         res.status(500).json({ error: 'Failed to export incidents' });
     }
 });
 
 // --- Risks API Endpoints ---
-app.get('/api/risks', async (req, res) => {
+app.get('/api/risks', authMiddleware, async (req, res) => {
     try {
-        const snapshot = await firestore.collection('risks').get();
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping risks query to orgId: ${orgId}`);
+        const snapshot = await firestore.collection('risks')
+            .where('orgId', '==', orgId)
+            .get();
+            
         const risks = [];
         snapshot.forEach(doc => risks.push({ id: doc.id, ...doc.data() }));
         res.json(risks);
     } catch (err) {
+        console.error('[Lucid] Failed to fetch risks:', err);
         res.status(500).json({ error: 'Failed to fetch risks' });
     }
 });
 
-app.post('/api/risks', async (req, res) => {
+app.post('/api/risks', authMiddleware, async (req, res) => {
     try {
-        const docRef = await firestore.collection('risks').add(req.body);
-        res.json({ id: docRef.id, ...req.body });
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping risk creation to orgId: ${orgId}`);
+        const riskData = {
+            ...req.body,
+            orgId: orgId,
+            createdAt: new Date()
+        };
+        const docRef = await firestore.collection('risks').add(riskData);
+        res.json({ id: docRef.id, ...riskData });
     } catch (err) {
+        console.error('[Lucid] Failed to create risk:', err);
         res.status(500).json({ error: 'Failed to create risk' });
     }
 });
 
-app.patch('/api/risks/:id', async (req, res) => {
+app.patch('/api/risks/:id', authMiddleware, async (req, res) => {
     try {
-        await firestore.collection('risks').doc(req.params.id).update(req.body);
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping risk update (${req.params.id}) to orgId: ${orgId}`);
+        const docRef = firestore.collection('risks').doc(req.params.id);
+        const doc = await docRef.get();
+        
+        if (!doc.exists) {
+            return res.status(404).json({ error: 'Risk not found' });
+        }
+        if (doc.data().orgId !== orgId) {
+            console.log(`[Auth] Forbidden update attempt on risk ${req.params.id} by orgId ${orgId}`);
+            return res.status(403).json({ error: 'Forbidden: You do not own this risk' });
+        }
+
+        const updateData = { ...req.body };
+        delete updateData.orgId; // Prevent changing orgId
+        
+        await docRef.update(updateData);
         res.json({ success: true });
     } catch (err) {
+        console.error('[Lucid] Failed to update risk:', err);
         res.status(500).json({ error: 'Failed to update risk' });
     }
 });
 
-app.delete('/api/risks/:id', async (req, res) => {
+app.delete('/api/risks/:id', authMiddleware, async (req, res) => {
     try {
-        await firestore.collection('risks').doc(req.params.id).delete();
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping risk delete (${req.params.id}) to orgId: ${orgId}`);
+        const docRef = firestore.collection('risks').doc(req.params.id);
+        const doc = await docRef.get();
+        
+        if (!doc.exists) {
+            return res.status(404).json({ error: 'Risk not found' });
+        }
+        if (doc.data().orgId !== orgId) {
+            console.log(`[Auth] Forbidden delete attempt on risk ${req.params.id} by orgId ${orgId}`);
+            return res.status(403).json({ error: 'Forbidden: You do not own this risk' });
+        }
+        
+        await docRef.delete();
         res.json({ success: true });
     } catch (err) {
+        console.error('[Lucid] Failed to delete risk:', err);
         res.status(500).json({ error: 'Failed to delete risk' });
     }
 });
 
 // --- Patterns API Endpoint ---
-app.get('/api/patterns', async (req, res) => {
+app.get('/api/patterns', authMiddleware, async (req, res) => {
     try {
+        const orgId = req.orgId;
+        console.log(`[Firestore] Scoping patterns query to orgId: ${orgId}`);
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
         const snapshot = await firestore.collection('incidents')
+            .where('orgId', '==', orgId)
             .where('timestamp', '>=', thirtyDaysAgo)
             .get();
             
@@ -288,7 +424,7 @@ app.get('/api/patterns', async (req, res) => {
             
         res.json(sortedPatterns);
     } catch (err) {
-        console.error(err);
+        console.error('[Lucid] Failed to fetch patterns:', err);
         res.status(500).json({ error: 'Failed to fetch patterns' });
     }
 });

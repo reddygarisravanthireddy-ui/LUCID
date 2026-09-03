@@ -1,4 +1,48 @@
+// Initialize Firebase Client SDK
+const firebaseConfig = {
+    projectId: "project-c48afffb-501b-4711-a6d",
+    appId: "1:264271786605:web:49d1f314adcd37df418564",
+    storageBucket: "project-c48afffb-501b-4711-a6d.firebasestorage.app",
+    apiKey: "AIzaSyB90ZjqTs5d_qksVfvmgfbW1D7ldm4v1uA",
+    authDomain: "project-c48afffb-501b-4711-a6d.firebaseapp.com",
+    messagingSenderId: "264271786605"
+};
+
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const auth = firebase.auth();
+
+// Authenticated Fetch Helper
+async function fetchWithAuth(url, options = {}) {
+    const user = auth.currentUser;
+    if (!user) {
+        throw new Error('User is not authenticated');
+    }
+    const token = await user.getIdToken();
+    const headers = {
+        ...(options.headers || {}),
+        'Authorization': `Bearer ${token}`
+    };
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+        console.warn('[Auth] Token unauthorized or expired. Prompting re-auth.');
+    }
+    return response;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    // Auth DOM Elements
+    const authOverlay = document.getElementById('auth-overlay');
+    const authError = document.getElementById('auth-error');
+    const googleSigninBtn = document.getElementById('google-signin-btn');
+    const appContainer = document.getElementById('app-container');
+    const userProfile = document.getElementById('user-profile');
+    const userEmail = document.getElementById('user-email');
+    const userAvatar = document.getElementById('user-avatar');
+    const signoutBtn = document.getElementById('signout-btn');
+
+    // App DOM Elements
     const toggleInput = document.getElementById('mode-toggle');
     const labelShieldMe = document.querySelector('.toggle-label.shieldme');
     const labelTIQ = document.querySelector('.toggle-label.tiq');
@@ -28,10 +72,76 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('lucid_session_id', sessionId);
     }
 
+    const tabAnalyzer = document.getElementById('tab-analyzer');
     const tabMyChecks = document.getElementById('tab-my-checks');
+    const tabDashboard = document.getElementById('tab-dashboard');
+    const viewAnalyzer = document.getElementById('view-analyzer');
     const viewMyChecks = document.getElementById('view-my-checks');
+    const viewDashboard = document.getElementById('view-dashboard');
 
-    // Toggle Label styling update
+    // --- Authentication Flow ---
+    googleSigninBtn.addEventListener('click', async () => {
+        try {
+            authError.classList.add('hidden');
+            authError.textContent = '';
+            googleSigninBtn.disabled = true;
+            googleSigninBtn.style.opacity = '0.7';
+            const provider = new firebase.auth.GoogleAuthProvider();
+            await auth.signInWithPopup(provider);
+        } catch (err) {
+            console.error('[Auth] Sign-in error:', err);
+            authError.textContent = err.message || 'Google Sign-in failed. Please try again.';
+            authError.classList.remove('hidden');
+        } finally {
+            googleSigninBtn.disabled = false;
+            googleSigninBtn.style.opacity = '1';
+        }
+    });
+
+    signoutBtn.addEventListener('click', async () => {
+        try {
+            await auth.signOut();
+        } catch (err) {
+            console.error('[Auth] Sign-out error:', err);
+        }
+    });
+
+    // Listen to Firebase Auth state changes
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            // User is signed in
+            authOverlay.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            
+            userEmail.textContent = user.displayName || user.email || 'User';
+            if (user.photoURL) {
+                userAvatar.src = user.photoURL;
+                userAvatar.style.display = 'block';
+            } else {
+                userAvatar.style.display = 'none';
+            }
+
+            // Refresh data based on active view
+            if (tabDashboard.classList.contains('active')) {
+                loadDashboardData();
+            } else if (tabMyChecks.classList.contains('active')) {
+                fetchMyChecks();
+            }
+        } else {
+            // User is signed out
+            authOverlay.classList.remove('hidden');
+            appContainer.classList.add('hidden');
+            userEmail.textContent = '';
+            userAvatar.src = '';
+            userAvatar.style.display = 'none';
+            
+            // Clear in-memory / UI results
+            clearResults();
+            document.querySelectorAll('.action-menu').forEach(m => m.remove());
+        }
+    });
+
+    // --- Mode Toggle & Navigation ---
     toggleInput.addEventListener('change', () => {
         if (toggleInput.checked) {
             labelShieldMe.classList.remove('active');
@@ -83,8 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
         clearImage();
     });
 
-
-
     function clearImage() {
         currentImageBase64 = null;
         fileInput.value = '';
@@ -123,18 +231,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     const canvas = document.createElement('canvas');
                     let width = img.width;
                     let height = img.height;
-                    
-                    if (width > 1600 || height > 1600) {
-                        const ratio = Math.min(1600 / width, 1600 / height);
-                        width *= ratio;
-                        height *= ratio;
+                    const maxDim = 1600;
+
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                        } else {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                        }
                     }
-                    
+
                     canvas.width = width;
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    
+
                     const base64 = canvas.toDataURL('image/webp', 0.8).split(',')[1];
                     resolve(base64);
                 };
@@ -146,209 +259,246 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function clearResults() {
+        resultsContainer.innerHTML = '';
+        resultsContainer.classList.add('hidden');
+        clearContainer.classList.add('hidden');
+        errorContainer.classList.add('hidden');
+        textInput.value = '';
+        clearImage();
+    }
+
+    clearBtn.addEventListener('click', clearResults);
+
+    // --- Threat Analysis ---
     checkBtn.addEventListener('click', async () => {
         const text = textInput.value.trim();
         if (!text && !currentImageBase64) {
-            alert('Please paste some text or upload an image to analyze.');
+            alert('Please enter some text or upload an image to analyze.');
             return;
         }
 
-        const mode = toggleInput.checked ? 'analyst' : 'everyday';
-
-        // Set Loading state
-        checkBtn.disabled = true;
-        btnText.textContent = 'Analyzing...';
-        loader.classList.remove('hidden');
+        setLoading(true);
         resultsContainer.classList.add('hidden');
         clearContainer.classList.add('hidden');
         errorContainer.classList.add('hidden');
 
+        const mode = toggleInput.checked ? 'analyst' : 'everyday';
+
         try {
-            const response = await fetch('/api/analyze', {
+            const response = await fetchWithAuth('/api/analyze', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ text, mode, imageBase64: currentImageBase64, sessionId })
+                body: JSON.stringify({ 
+                    text: text || undefined, 
+                    imageBase64: currentImageBase64 || undefined,
+                    mode,
+                    sessionId
+                })
             });
 
+            const data = await response.json();
+
             if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Server error');
+                throw new Error(data.error || 'Unable to verify — proceed with caution.');
             }
 
-            const data = await response.json();
             renderResults(data, mode);
+            clearContainer.classList.remove('hidden');
 
-        } catch (error) {
-            console.error('Error:', error);
-            // Show standard error message per requirements
+            if (!toggleInput.checked && tabMyChecks.classList.contains('active')) {
+                fetchMyChecks();
+            }
+        } catch (err) {
+            console.error('[Analyzer Error]', err);
+            errorMessage.textContent = err.message || 'Unable to verify — proceed with caution.';
             errorContainer.classList.remove('hidden');
-            errorMessage.textContent = 'Unable to verify — proceed with caution.';
+            clearContainer.classList.remove('hidden');
         } finally {
-            // Reset Loading state
-            checkBtn.disabled = false;
-            btnText.textContent = 'Check This';
-            loader.classList.add('hidden');
+            setLoading(false);
         }
     });
+
+    function setLoading(isLoading) {
+        if (isLoading) {
+            btnText.classList.add('hidden');
+            loader.classList.remove('hidden');
+            checkBtn.disabled = true;
+        } else {
+            btnText.classList.remove('hidden');
+            loader.classList.add('hidden');
+            checkBtn.disabled = false;
+        }
+    }
 
     function renderResults(data, mode) {
         resultsContainer.innerHTML = '';
+        resultsContainer.className = 'results-section'; // reset classes
         
         if (mode === 'everyday') {
-            const verdictClass = (data.verdict || '').toLowerCase();
-            const badgeClass = ['safe', 'suspicious', 'dangerous'].includes(verdictClass) ? verdictClass : 'suspicious';
+            const card = document.createElement('div');
+            card.className = 'card';
             
-            let stepsHtml = '';
-            if (data.next_steps && Array.isArray(data.next_steps)) {
-                stepsHtml = `<ul class="steps-list">${data.next_steps.map(step => `<li>${step}</li>`).join('')}</ul>`;
-            } else {
-                stepsHtml = `<p>No specific steps recommended.</p>`;
+            let verdictClass = 'verdict-safe';
+            const v = (data.verdict || '').toLowerCase();
+            if (v.includes('suspicious')) {
+                verdictClass = 'verdict-suspicious';
+            } else if (v.includes('dangerous')) {
+                verdictClass = 'verdict-dangerous';
             }
-
-            resultsContainer.innerHTML = `
-                <div class="result-header">
-                    <span class="badge ${badgeClass}">${data.verdict || 'Unknown'}</span>
-                    <span class="result-title">Analysis Complete</span>
-                </div>
-                <div class="result-body">
-                    <div>
-                        <div class="section-label">Explanation</div>
-                        <div class="explanation-text">${data.explanation || 'No explanation provided.'}</div>
-                    </div>
-                    <div>
-                        <div class="section-label">Recommended Next Steps</div>
-                        ${stepsHtml}
-                    </div>
-                </div>
-            `;
-        } else if (mode === 'analyst') {
-            const severityClass = (data.severity || '').toLowerCase();
-            const badgeClass = ['low', 'medium', 'high', 'critical'].includes(severityClass) ? severityClass : 'medium';
             
-            resultsContainer.innerHTML = `
-                <div class="result-header">
-                    <span class="badge ${badgeClass}">${data.severity || 'Unknown'} Severity</span>
-                    <span class="result-title">${data.classification || 'Unclassified Pattern'}</span>
+            const nextStepsHtml = Array.isArray(data.next_steps) 
+                ? data.next_steps.map(step => `<li>${step}</li>`).join('') 
+                : '';
+
+            card.innerHTML = `
+                <div class="verdict-banner ${verdictClass}">
+                    Verdict: ${data.verdict || 'Unknown'}
                 </div>
-                <div class="result-body">
-                    <div>
-                        <div class="section-label">Technical Reasoning</div>
-                        <div class="explanation-text">${data.reasoning || 'No reasoning provided.'}</div>
-                    </div>
-                    <div class="action-box">
-                        <div class="section-label">Recommended Security Action</div>
-                        <div class="explanation-text">${data.recommended_action || 'None'}</div>
-                    </div>
+                <div class="content-body">
+                    <h3>Explanation</h3>
+                    <p>${data.explanation || 'No explanation provided.'}</p>
+                    
+                    ${nextStepsHtml ? `
+                        <h3>Recommended Next Steps</h3>
+                        <ul class="steps-list">
+                            ${nextStepsHtml}
+                        </ul>
+                    ` : ''}
                 </div>
             `;
+            resultsContainer.appendChild(card);
+
+        } else if (mode === 'analyst') {
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            let sevClass = 'sev-low';
+            const s = (data.severity || '').toLowerCase();
+            if (s.includes('medium')) sevClass = 'sev-medium';
+            if (s.includes('high')) sevClass = 'sev-high';
+            if (s.includes('critical')) sevClass = 'sev-critical';
+
+            card.innerHTML = `
+                <div class="analyst-header">
+                    <div>
+                        <span class="classification-title">${data.classification || 'Unclassified'}</span>
+                    </div>
+                    <span class="severity-badge ${sevClass}">${data.severity || 'Unknown'}</span>
+                </div>
+                <div class="content-body">
+                    <h3>Reasoning</h3>
+                    <p>${data.reasoning || 'No technical reasoning provided.'}</p>
+                    
+                    <h3>Recommended Action</h3>
+                    <p>${data.recommended_action || 'No action specified.'}</p>
+                </div>
+            `;
+            resultsContainer.appendChild(card);
         }
 
         resultsContainer.classList.remove('hidden');
-        clearContainer.classList.remove('hidden');
     }
 
-    clearBtn.addEventListener('click', () => {
-        textInput.value = '';
-        clearImage();
-        resultsContainer.classList.add('hidden');
-        clearContainer.classList.add('hidden');
-        errorContainer.classList.add('hidden');
-        resultsContainer.innerHTML = '';
-        textInput.focus();
-    });
-
-    // --- Dashboard & Navigation Logic ---
-    const tabAnalyzer = document.getElementById('tab-analyzer');
-    const tabDashboard = document.getElementById('tab-dashboard');
-    const viewAnalyzer = document.getElementById('view-analyzer');
-    const viewDashboard = document.getElementById('view-dashboard');
-
+    // --- Navigation Tabs ---
     tabAnalyzer.addEventListener('click', () => {
         tabAnalyzer.classList.add('active');
+        tabMyChecks.classList.remove('active');
         tabDashboard.classList.remove('active');
-        tabMyChecks.classList.remove('active');
+        
         viewAnalyzer.classList.remove('hidden');
+        viewMyChecks.classList.add('hidden');
         viewDashboard.classList.add('hidden');
-        viewMyChecks.classList.add('hidden');
-    });
-
-    tabDashboard.addEventListener('click', () => {
-        tabDashboard.classList.add('active');
-        tabAnalyzer.classList.remove('active');
-        tabMyChecks.classList.remove('active');
-        viewDashboard.classList.remove('hidden');
-        viewAnalyzer.classList.add('hidden');
-        viewMyChecks.classList.add('hidden');
-        loadDashboardData();
     });
 
     tabMyChecks.addEventListener('click', () => {
         tabMyChecks.classList.add('active');
         tabAnalyzer.classList.remove('active');
         tabDashboard.classList.remove('active');
+        
         viewMyChecks.classList.remove('hidden');
         viewAnalyzer.classList.add('hidden');
         viewDashboard.classList.add('hidden');
+        
         fetchMyChecks();
     });
 
+    tabDashboard.addEventListener('click', () => {
+        tabDashboard.classList.add('active');
+        tabAnalyzer.classList.remove('active');
+        tabMyChecks.classList.remove('active');
+        
+        viewDashboard.classList.remove('hidden');
+        viewAnalyzer.classList.add('hidden');
+        viewMyChecks.classList.add('hidden');
+        
+        loadDashboardData();
+    });
+
+    // --- My Checks (ShieldMe History) ---
     async function fetchMyChecks() {
+        const list = document.getElementById('my-checks-list');
+        list.innerHTML = '<p class="loading-text">Loading past checks...</p>';
         try {
-            const res = await fetch(`/api/my-checks?sessionId=${sessionId}`);
+            const res = await fetchWithAuth(`/api/my-checks?sessionId=${sessionId}`);
             const checks = await res.json();
-            const list = document.getElementById('my-checks-list');
-            if (checks.length === 0) {
-                list.innerHTML = '<div class="empty-checks">No checks yet in this session.</div>';
+            
+            if (!checks || checks.length === 0) {
+                list.innerHTML = '<p class="empty-text">No checks recorded for this session yet. Run a check in ShieldMe mode to see history here!</p>';
                 return;
             }
-            
+
             list.innerHTML = checks.map(c => {
                 const dateObj = c.timestamp && c.timestamp._seconds ? new Date(c.timestamp._seconds * 1000) : (c.timestamp ? new Date(c.timestamp) : new Date());
-                const v = (c.verdictOrClassification || '').toLowerCase();
-                const cardClass = ['safe', 'suspicious', 'dangerous'].includes(v) ? v : 'suspicious';
+                const dateStr = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 
+                let badgeClass = 'verdict-safe';
+                const v = (c.verdictOrClassification || '').toLowerCase();
+                if (v.includes('suspicious')) badgeClass = 'verdict-suspicious';
+                else if (v.includes('dangerous')) badgeClass = 'verdict-dangerous';
+
                 return `
-                    <div class="check-card ${cardClass}">
-                        <div class="check-card-content">
-                            <div class="check-card-header">
-                                <span>${dateObj.toLocaleString()}</span>
-                                <span class="check-card-verdict">${c.verdictOrClassification || 'Unknown'}</span>
-                            </div>
-                            <div class="check-card-summary">
-                                ${c.inputSummary || '-'}
-                            </div>
+                    <div class="my-check-card">
+                        <div class="my-check-header">
+                            <span class="my-check-date">${dateStr}</span>
+                            <span class="verdict-tag ${badgeClass}">${c.verdictOrClassification || 'Unknown'}</span>
+                        </div>
+                        <div class="my-check-summary">
+                            <p class="summary-text">${c.inputSummary || 'Text check'}</p>
+                            <p class="explanation-preview">${c.explanation || ''}</p>
                         </div>
                     </div>
                 `;
             }).join('');
         } catch (err) {
-            console.error('Failed to fetch my checks', err);
+            console.error('[My Checks Error]', err);
+            list.innerHTML = '<p class="error-text">Failed to load history.</p>';
         }
     }
 
-    async function loadDashboardData() {
-        await Promise.all([
-            fetchIncidents(),
-            fetchPatterns(),
-            fetchRisks()
-        ]);
-    }
-
+    // --- Dashboard Data Loading ---
     let currentIncidentFilter = 'all';
-    document.querySelectorAll('.btn-filter').forEach(btn => {
+
+    document.querySelectorAll('.filter-group .btn-filter').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            document.querySelectorAll('.btn-filter').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.filter-group .btn-filter').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
-            currentIncidentFilter = e.target.getAttribute('data-filter');
+            currentIncidentFilter = e.target.dataset.filter;
             fetchIncidents();
         });
     });
 
+    async function loadDashboardData() {
+        fetchIncidents();
+        fetchPatterns();
+        fetchRisks();
+    }
+
     async function fetchIncidents() {
         try {
-            const res = await fetch('/api/incidents');
+            const res = await fetchWithAuth('/api/incidents');
             const incidents = await res.json();
             
             // Stats
@@ -430,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchPatterns() {
         try {
-            const res = await fetch('/api/patterns');
+            const res = await fetchWithAuth('/api/patterns');
             const patterns = await res.json();
             const list = document.getElementById('patterns-list');
             if (patterns.length === 0) {
@@ -447,7 +597,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchRisks() {
         try {
-            const res = await fetch('/api/risks');
+            const res = await fetchWithAuth('/api/risks');
             const risks = await res.json();
             const tbody = document.querySelector('#risks-table tbody');
 
@@ -496,10 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
-    // Delegated event handler on the risks table body.
-    // Using event delegation instead of inline onclick avoids JS injection
-    // when field values contain quotes/special chars.
+    // Delegated event handler on the risks table body
     document.querySelector('#risks-table tbody').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-action]');
         if (!btn) return;
@@ -510,10 +657,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (action === 'toggle-menu') {
             const menu = document.getElementById(`risk-menu-${riskId}`);
+            if (!menu) return;
             const isHidden = menu.classList.contains('hidden');
             closeAllRiskMenus();
             if (isHidden) {
-                // Position the fixed menu below/right-aligned with the ⋮ button
                 const rect = btn.getBoundingClientRect();
                 menu.style.top = `${rect.bottom + 4}px`;
                 menu.style.left = `${rect.right - 130}px`; // 130 = min-width
@@ -523,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Handle Edit / Delete clicks on body-level menus
-    document.body.addEventListener('click', (e) => {
+    document.body.addEventListener('click', async (e) => {
         const btn = e.target.closest('.action-menu [data-action]');
         if (!btn) return;
         e.stopPropagation();
@@ -544,13 +691,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (action === 'delete') {
             closeAllRiskMenus();
             if (confirm('Are you sure you want to delete this risk?')) {
-                fetch(`/api/risks/${riskId}`, { method: 'DELETE' })
-                    .then(() => fetchRisks())
-                    .catch(err => console.error('Failed to delete risk', err));
+                try {
+                    await fetchWithAuth(`/api/risks/${riskId}`, { method: 'DELETE' });
+                    fetchRisks();
+                } catch (err) {
+                    console.error('Failed to delete risk', err);
+                }
             }
         }
     });
-
 
     window.closeAllRiskMenus = () => {
         document.querySelectorAll('.action-menu').forEach(menu => {
@@ -558,7 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // Close menus when clicking outside (menus are body-level, not inside .action-cell)
+    // Close menus when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.action-menu') && !e.target.closest('[data-action="toggle-menu"]')) {
             closeAllRiskMenus();
@@ -566,32 +715,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.updateIncidentStatus = async (id, status) => {
-        await fetch(`/api/incidents/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status })
-        });
-        fetchIncidents();
-    };
-
-    window.updateRiskStatus = async (id, status) => {
-        await fetch(`/api/risks/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status })
-        });
-        fetchRisks();
-    };
-
-    window.deleteRisk = async (id) => {
-        if(confirm('Delete this risk?')) {
-            await fetch(`/api/risks/${id}`, { method: 'DELETE' });
-            fetchRisks();
+        try {
+            await fetchWithAuth(`/api/incidents/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            fetchIncidents();
+        } catch (err) {
+            console.error('Failed to update incident status', err);
         }
     };
 
-    document.getElementById('export-incidents-btn').addEventListener('click', () => {
-        window.location.href = '/api/incidents/export';
+    window.updateRiskStatus = async (id, status) => {
+        try {
+            await fetchWithAuth(`/api/risks/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            fetchRisks();
+        } catch (err) {
+            console.error('Failed to update risk status', err);
+        }
+    };
+
+    window.deleteRisk = async (id) => {
+        if (confirm('Are you sure you want to delete this risk?')) {
+            try {
+                await fetchWithAuth(`/api/risks/${id}`, { method: 'DELETE' });
+                fetchRisks();
+            } catch (err) {
+                console.error('Failed to delete risk', err);
+            }
+        }
+    };
+
+    // Export CSV with Bearer Token
+    document.getElementById('export-incidents-btn').addEventListener('click', async () => {
+        try {
+            const res = await fetchWithAuth('/api/incidents/export');
+            if (!res.ok) throw new Error('Export failed');
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'incidents.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } catch (err) {
+            console.error('Failed to export CSV', err);
+            alert('Failed to export incidents CSV.');
+        }
     });
 
     document.getElementById('add-risk-btn').addEventListener('click', async () => {
@@ -604,12 +782,16 @@ document.addEventListener('DOMContentLoaded', () => {
         let priority = prompt('Priority (Low, Medium, High, Critical):', 'Medium');
         priority = priority || 'Medium';
         
-        await fetch('/api/risks', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ description, category, priority, status: 'Open' })
-        });
-        fetchRisks();
+        try {
+            await fetchWithAuth('/api/risks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ description, category, priority, status: 'Open' })
+            });
+            fetchRisks();
+        } catch (err) {
+            console.error('Failed to add risk', err);
+        }
     });
 
     // Risk Modal Logic
@@ -627,19 +809,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-modal-save').addEventListener('click', async () => {
         if (!currentEditRiskId) return;
         
-        await fetch(`/api/risks/${currentEditRiskId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                description: modalDesc.value,
-                category: modalCategory.value,
-                priority: modalPriority.value,
-                status: modalStatus.value
-            })
-        });
-        
-        riskModal.classList.add('hidden');
-        fetchRisks();
+        try {
+            await fetchWithAuth(`/api/risks/${currentEditRiskId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    description: modalDesc.value,
+                    category: modalCategory.value,
+                    priority: modalPriority.value,
+                    status: modalStatus.value
+                })
+            });
+            riskModal.classList.add('hidden');
+            fetchRisks();
+        } catch (err) {
+            console.error('Failed to save risk changes', err);
+        }
     });
 
     window.openEditRiskModal = (id, desc, cat, prio, stat) => {
@@ -650,13 +835,4 @@ document.addEventListener('DOMContentLoaded', () => {
         modalStatus.value = stat;
         riskModal.classList.remove('hidden');
     };
-
-    // Legacy global kept for any external callers; internally now handled by delegation.
-    window.deleteRisk = async (id) => {
-        if (confirm('Are you sure you want to delete this risk?')) {
-            await fetch(`/api/risks/${id}`, { method: 'DELETE' });
-            fetchRisks();
-        }
-    };
-
 });
