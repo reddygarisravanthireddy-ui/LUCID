@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: get the tenantId of the currently signed-in user
+    function callerTenantId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Users can only read their own user document (which stores their tenantId)
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if false; // set up manually/via admin SDK, not by end users
+    }
+
+    // Risk register entries: strictly scoped to the caller's own tenant
+    match /risks/{riskId} {
+      allow read: if isSignedIn() &&
+                     resource.data.tenantId == callerTenantId();
+
+      allow create: if isSignedIn() &&
+                       request.resource.data.tenantId == callerTenantId();
+
+      allow update: if isSignedIn() &&
+                       resource.data.tenantId == callerTenantId() &&
+                       request.resource.data.tenantId == callerTenantId();
+
+      allow delete: if isSignedIn() &&
+                       resource.data.tenantId == callerTenantId();
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

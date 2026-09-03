@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lucid - Analyze Suspicious Text</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                <h1>Lucid</h1>
+            </div>
+            <p class="subtitle">AI-powered threat analysis made simple.</p>
+        </header>
+
+        <nav class="top-nav">
+            <button id="tab-analyzer" class="nav-tab active">Analyzer</button>
+            <button id="tab-my-checks" class="nav-tab">My Checks</button>
+            <button id="tab-dashboard" class="nav-tab hidden">Dashboard</button>
+        </nav>
+
+        <main>
+            <div id="view-analyzer">
+                <div class="input-section">
+                <div class="controls">
+                    <label class="toggle-container">
+                        <span class="toggle-label shieldme active" data-tooltip="For everyday people — get a simple safety verdict and clear next steps for suspicious messages, emails, or scams.">ShieldMe</span>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="mode-toggle">
+                            <span class="slider"></span>
+                        </div>
+                        <span class="toggle-label tiq" data-tooltip="For security professionals — get a technical classification, severity rating, and recommended security action for alerts and threats.">TIQ</span>
+                    </label>
+                </div>
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="file-input" accept="image/png, image/jpeg, image/webp" hidden>
+                    <div class="upload-prompt" id="upload-prompt">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <p>Drag & drop a screenshot, or <span class="browse-link">browse</span></p>
+                    </div>
+                    <div class="image-preview hidden" id="image-preview">
+                        <img id="preview-img" src="" alt="Preview">
+                        <button id="remove-img-btn" class="btn-remove">×</button>
+                    </div>
+                </div>
+                
+                <textarea id="suspicious-text" placeholder="Paste suspicious email, message, or alert here..."></textarea>
+                <button id="check-btn" class="btn-primary">
+                    <span class="btn-text">Check This</span>
+                    <span class="loader hidden"></span>
+                </button>
+            </div>
+
+            <div id="results-container" class="results-section hidden">
+                <!-- Results will be injected here -->
+            </div>
+            
+            <div id="clear-container" class="clear-section hidden">
+                <button id="clear-btn" class="btn-clear">Clear Results</button>
+            </div>
+            
+            <div id="error-container" class="error-section hidden">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <p id="error-message">Unable to verify — proceed with caution.</p>
+            </div>
+            </div> <!-- End view-analyzer -->
+
+            <div id="view-my-checks" class="hidden">
+                <div class="my-checks-header">
+                    <h2>My Checks History</h2>
+                    <p>A simple log of your past ShieldMe analyses.</p>
+                </div>
+                <div id="my-checks-list" class="my-checks-container">
+                    <!-- Loaded via JS -->
+                </div>
+            </div> <!-- End view-my-checks -->
+
+            <div id="view-dashboard" class="hidden">
+                <div class="dashboard-grid">
+                    <div class="stat-card">
+                        <h3>Total Incidents</h3>
+                        <p id="stat-total" class="stat-value">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Open Incidents</h3>
+                        <p id="stat-open" class="stat-value">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>High/Critical</h3>
+                        <p id="stat-high" class="stat-value">0</p>
+                    </div>
+                </div>
+
+                <div class="dashboard-row">
+                    <div class="dashboard-panel pattern-panel">
+                        <h3>Detected Patterns (Last 30 Days)</h3>
+                        <ul id="patterns-list" class="pattern-list">
+                            <li>Loading...</li>
+                        </ul>
+                    </div>
+                    <div class="dashboard-panel trend-panel">
+                        <h3>Incidents Over Time (Last 7 Days)</h3>
+                        <ul id="trend-list" class="trend-list">
+                            <li>Loading...</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="dashboard-panel">
+                    <div class="panel-header">
+                        <h3>Incidents</h3>
+                        <div class="header-actions">
+                            <div class="filter-group">
+                                <button class="btn-filter active" data-filter="all">All</button>
+                                <button class="btn-filter" data-filter="open">Open Only</button>
+                                <button class="btn-filter" data-filter="critical">Critical Only</button>
+                            </div>
+                            <button id="export-incidents-btn" class="btn-secondary">Export CSV</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="incidents-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Days Open</th>
+                                    <th>Mode</th>
+                                    <th>Input</th>
+                                    <th>Classification</th>
+                                    <th>Severity</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="dashboard-panel">
+                    <div class="panel-header">
+                        <h3>Risk Register</h3>
+                        <button id="add-risk-btn" class="btn-primary-small">Add Risk</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="risks-table">
+                            <thead>
+                                <tr>
+                                    <th>Description</th>
+                                    <th>Category</th>
+                                    <th>Priority</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div> <!-- End view-dashboard -->
+
+        </main>
+    </div>
+
+    <!-- Risk Edit Modal -->
+    <div id="risk-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>Edit Risk</h3>
+            <div class="modal-form">
+                <label>Description</label>
+                <input type="text" id="modal-risk-desc">
+                
+                <label>Category</label>
+                <input type="text" id="modal-risk-category">
+                
+                <label>Priority</label>
+                <select id="modal-risk-priority">
+                    <option>Low</option>
+                    <option>Medium</option>
+                    <option>High</option>
+                    <option>Critical</option>
+                </select>
+                
+                <label>Status</label>
+                <select id="modal-risk-status">
+                    <option>Open</option>
+                    <option>Mitigated</option>
+                    <option>Closed</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="btn-modal-save" class="btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
