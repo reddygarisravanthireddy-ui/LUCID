@@ -419,33 +419,59 @@ textarea:focus {
 .result-header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.85rem;
     margin-bottom: 1.25rem;
     padding-bottom: 1rem;
     border-bottom: 1px solid var(--border);
 }
 
-.badge {
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.9rem;
+/* Pill-shaped Badges */
+.badge, .severity-badge, .verdict-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 1rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 0.85rem;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
+    line-height: 1.2;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: transform 0.2s ease;
 }
 
-/* Verdict Colors */
-.badge.safe { background: var(--safe-bg); color: var(--safe); }
-.badge.suspicious { background: var(--suspicious-bg); color: var(--suspicious); }
-.badge.dangerous { background: var(--dangerous-bg); color: var(--dangerous); }
-.badge.low { background: var(--safe-bg); color: var(--safe); }
-.badge.medium { background: var(--suspicious-bg); color: var(--suspicious); }
-.badge.high { background: var(--suspicious-bg); color: var(--suspicious); }
-.badge.critical { background: var(--dangerous-bg); color: var(--dangerous); }
+/* Red Background Badge: Dangerous / Critical */
+.badge.dangerous, .badge.critical,
+.severity-badge.sev-critical, .severity-badge.dangerous,
+.verdict-tag.verdict-dangerous, .verdict-dangerous {
+    background: rgba(226, 76, 76, 0.22);
+    color: #ff6b6b;
+    border: 1px solid rgba(226, 76, 76, 0.55);
+}
+
+/* Amber / Yellow Background Badge: Suspicious / Medium / High */
+.badge.suspicious, .badge.medium, .badge.high,
+.severity-badge.sev-medium, .severity-badge.sev-high, .severity-badge.suspicious,
+.verdict-tag.verdict-suspicious, .verdict-suspicious {
+    background: rgba(240, 163, 62, 0.22);
+    color: #f0a33e;
+    border: 1px solid rgba(240, 163, 62, 0.55);
+}
+
+/* Green Background Badge: Safe / Low */
+.badge.safe, .badge.low,
+.severity-badge.sev-low, .severity-badge.safe,
+.verdict-tag.verdict-safe, .verdict-safe {
+    background: rgba(43, 157, 98, 0.22);
+    color: #38d384;
+    border: 1px solid rgba(43, 157, 98, 0.55);
+}
 
 .result-title {
     font-size: 1.25rem;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 .result-body {
@@ -453,6 +479,7 @@ textarea:focus {
     flex-direction: column;
     gap: 1.25rem;
 }
+
 
 .section-label {
     font-size: 0.85rem;

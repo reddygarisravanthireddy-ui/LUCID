@@ -31,6 +31,16 @@ async function fetchWithAuth(url, options = {}) {
     return response;
 }
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Auth DOM Elements
     const authOverlay = document.getElementById('auth-overlay');
@@ -341,31 +351,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'card';
             
-            let verdictClass = 'verdict-safe';
+            let verdictBadgeClass = 'safe';
             const v = (data.verdict || '').toLowerCase();
-            if (v.includes('suspicious')) {
-                verdictClass = 'verdict-suspicious';
-            } else if (v.includes('dangerous')) {
-                verdictClass = 'verdict-dangerous';
+            if (v.includes('dangerous') || v.includes('critical')) {
+                verdictBadgeClass = 'dangerous';
+            } else if (v.includes('suspicious') || v.includes('medium') || v.includes('high')) {
+                verdictBadgeClass = 'suspicious';
             }
             
-            const nextStepsHtml = Array.isArray(data.next_steps) 
-                ? data.next_steps.map(step => `<li>${step}</li>`).join('') 
+            const nextStepsHtml = Array.isArray(data.next_steps)
+                ? data.next_steps.map(step => `<li>${escapeHtml(step)}</li>`).join('')
                 : '';
 
             card.innerHTML = `
-                <div class="verdict-banner ${verdictClass}">
-                    Verdict: ${data.verdict || 'Unknown'}
+                <div class="result-header">
+                    <span class="badge ${verdictBadgeClass}">${escapeHtml(data.verdict || 'Unknown')}</span>
+                    <span class="result-title">Security Verdict</span>
                 </div>
-                <div class="content-body">
-                    <h3>Explanation</h3>
-                    <p>${data.explanation || 'No explanation provided.'}</p>
+                <div class="result-body">
+                    <div>
+                        <div class="section-label">Explanation</div>
+                        <p class="explanation-text">${escapeHtml(data.explanation || 'No explanation provided.')}</p>
+                    </div>
                     
                     ${nextStepsHtml ? `
-                        <h3>Recommended Next Steps</h3>
-                        <ul class="steps-list">
-                            ${nextStepsHtml}
-                        </ul>
+                        <div>
+                            <div class="section-label">Recommended Next Steps</div>
+                            <ul class="steps-list">
+                                ${nextStepsHtml}
+                            </ul>
+                        </div>
                     ` : ''}
                 </div>
             `;
@@ -375,25 +390,74 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'card';
 
-            let sevClass = 'sev-low';
+            let sevBadgeClass = 'low';
             const s = (data.severity || '').toLowerCase();
-            if (s.includes('medium')) sevClass = 'sev-medium';
-            if (s.includes('high')) sevClass = 'sev-high';
-            if (s.includes('critical')) sevClass = 'sev-critical';
+            if (s.includes('critical') || s.includes('dangerous')) {
+                sevBadgeClass = 'critical';
+            } else if (s.includes('high')) {
+                sevBadgeClass = 'high';
+            } else if (s.includes('medium') || s.includes('suspicious')) {
+                sevBadgeClass = 'medium';
+            }
+
+            const mitreHtml = Array.isArray(data.mitre_attack) && data.mitre_attack.length > 0
+                ? data.mitre_attack.map(m => `<span class="badge badge-tech" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); margin-right: 6px; margin-bottom: 6px; font-size: 0.8rem; padding: 3px 8px; border-radius: 4px; display: inline-block;">${escapeHtml(m)}</span>`).join('')
+                : '';
+
+            const indicatorsHtml = Array.isArray(data.key_indicators) && data.key_indicators.length > 0
+                ? data.key_indicators.map(ind => `<li>${escapeHtml(ind)}</li>`).join('')
+                : '';
+
+            const techReasoning = data.technical_reasoning || data.reasoning || 'No technical reasoning provided.';
+            const recAction = (Array.isArray(data.soc_actions) && data.soc_actions.length > 0)
+                ? data.soc_actions.map(escapeHtml).join(' ')
+                : escapeHtml(data.recommended_action || 'No action specified.');
 
             card.innerHTML = `
-                <div class="analyst-header">
-                    <div>
-                        <span class="classification-title">${data.classification || 'Unclassified'}</span>
-                    </div>
-                    <span class="severity-badge ${sevClass}">${data.severity || 'Unknown'}</span>
+                <div class="result-header">
+                    <span class="badge ${sevBadgeClass}">${escapeHtml(data.severity || 'Unknown')}</span>
+                    <span class="result-title">${escapeHtml(data.classification || 'Security Threat')}</span>
                 </div>
-                <div class="content-body">
-                    <h3>Reasoning</h3>
-                    <p>${data.reasoning || 'No technical reasoning provided.'}</p>
+                <div class="result-body">
+                    ${mitreHtml ? `
+                        <div style="margin-bottom: 12px;">
+                            <div class="section-label">MITRE ATT&CK Mapping</div>
+                            <div>${mitreHtml}</div>
+                        </div>
+                    ` : ''}
+
+                    ${indicatorsHtml ? `
+                        <div style="margin-bottom: 12px;">
+                            <div class="section-label">Key Observable Indicators</div>
+                            <ul class="steps-list">${indicatorsHtml}</ul>
+                        </div>
+                    ` : ''}
+
+                    ${data.attack_chain && data.attack_chain !== 'Single-stage event' ? `
+                        <div style="margin-bottom: 12px;">
+                            <div class="section-label">Attack Progression Chain</div>
+                            <p class="explanation-text" style="color: #fbbf24;">${escapeHtml(data.attack_chain)}</p>
+                        </div>
+                    ` : ''}
+
+                    <div>
+                        <div class="section-label">Technical Reasoning</div>
+                        <p class="explanation-text">${escapeHtml(techReasoning)}</p>
+                    </div>
+
+                    ${data.why_severity ? `
+                        <div style="margin-top: 10px;">
+                            <div class="section-label">Severity Rationale</div>
+                            <p class="explanation-text" style="font-size: 0.9rem; color: #9ca3af;">${escapeHtml(data.why_severity)}</p>
+                        </div>
+                    ` : ''}
                     
-                    <h3>Recommended Action</h3>
-                    <p>${data.recommended_action || 'No action specified.'}</p>
+                    <div style="margin-top: 14px;">
+                        <div class="section-label">Recommended Security Action</div>
+                        <div class="action-box">
+                            <p>${recAction}</p>
+                        </div>
+                    </div>
                 </div>
             `;
             resultsContainer.appendChild(card);
@@ -401,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         resultsContainer.classList.remove('hidden');
     }
+
 
     // --- Navigation Tabs ---
     tabAnalyzer.addEventListener('click', () => {
@@ -463,11 +528,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="my-check-card">
                         <div class="my-check-header">
                             <span class="my-check-date">${dateStr}</span>
-                            <span class="verdict-tag ${badgeClass}">${c.verdictOrClassification || 'Unknown'}</span>
+                            <span class="verdict-tag ${badgeClass}">${escapeHtml(c.verdictOrClassification || 'Unknown')}</span>
                         </div>
                         <div class="my-check-summary">
-                            <p class="summary-text">${c.inputSummary || 'Text check'}</p>
-                            <p class="explanation-preview">${c.explanation || ''}</p>
+                            <p class="summary-text">${escapeHtml(c.inputSummary || 'Text check')}</p>
+                            <p class="explanation-preview">${escapeHtml(c.explanation || '')}</p>
                         </div>
                     </div>
                 `;
@@ -558,10 +623,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr>
                         <td>${dateStr}</td>
                         <td>${daysOpen}</td>
-                        <td>${inc.mode}</td>
-                        <td title="${inc.inputSummary}">${inc.inputType}</td>
-                        <td>${inc.verdictOrClassification || '-'}</td>
-                        <td>${inc.severity || '-'}</td>
+                        <td>${escapeHtml(inc.mode)}</td>
+                        <td title="${escapeHtml(inc.inputSummary)}">${escapeHtml(inc.inputType)}</td>
+                        <td>${escapeHtml(inc.verdictOrClassification || '-')}</td>
+                        <td>${escapeHtml(inc.severity || '-')}</td>
                         <td>
                             <select onchange="updateIncidentStatus('${inc.id}', this.value)">
                                 <option value="Open" ${inc.status === 'Open' ? 'selected' : ''}>Open</option>
@@ -588,7 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             list.innerHTML = patterns.map(p => 
-                `<li><span>${p.pattern}</span> <strong>${p.count} occurrences</strong></li>`
+                `<li><span>${escapeHtml(p.pattern)}</span> <strong>${p.count} occurrences</strong></li>`
             ).join('');
         } catch (err) {
             console.error('Failed to fetch patterns', err);
@@ -611,10 +676,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).replace(/"/g, '&quot;');
                 return `
                 <tr>
-                    <td>${r.description || '-'}</td>
-                    <td>${r.category || '-'}</td>
-                    <td>${r.priority || 'Unknown'}</td>
-                    <td>${r.status || 'Open'}</td>
+                    <td>${escapeHtml(r.description || '-')}</td>
+                    <td>${escapeHtml(r.category || '-')}</td>
+                    <td>${escapeHtml(r.priority || 'Unknown')}</td>
+                    <td>${escapeHtml(r.status || 'Open')}</td>
                     <td class="action-cell">
                         <button class="btn-icon" data-risk-id="${r.id}" data-action="toggle-menu" aria-label="Risk actions" title="Risk actions">&#8942;</button>
                     </td>

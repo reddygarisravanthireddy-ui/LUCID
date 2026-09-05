@@ -70,3 +70,9 @@ node_modules/
 
 # Local scratch/dev scripts
 scratch/
+
+# OS artifacts & test run output JSONs
+.DS_Store
+lucid_accuracy_results.json
+lucid_generalization_results.json
+lucid_adversarial_results.json

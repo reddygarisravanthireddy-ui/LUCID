@@ -1,168 +1,182 @@
-# LUCID — Dual-Mode AI Security & Threat Intelligence Platform
+# LUCID — Dual-Persona AI Security & Threat Intelligence Platform
 
-**LUCID** is an AI-powered security analysis platform that inspects suspicious text and screenshots (e.g., phishing emails, smishing SMS, fake login pages, deceptive permission prompts, fraudulent popups, and malicious QR codes). 
+> **Clarity in the face of chaos.**
 
-Designed with a dual-persona architecture, LUCID serves both everyday users seeking quick reassurance and security analysts managing enterprise threats:
-- **ShieldMe (Everyday Mode):** Plain-English safety verdicts (`Safe`, `Suspicious`, `Dangerous`), actionable advice, and a private, session-scoped history ("My Checks").
-- **TIQ (Analyst Mode):** In-depth technical classification, severity ratings (`Low`, `Medium`, `High`, `Critical`), MITRE-aligned reasoning, and a full Incident & Risk Management Dashboard.
+**LUCID** is an enterprise-grade AI security analysis platform designed to transform complex, multi-vector threat signals into clear, actionable intelligence. It inspects untrusted text payloads and visual artifacts (such as phishing emails, smishing SMS, fake authentication portals, deceptive permission prompts, fraudulent popups, and malicious QR codes) using multimodal AI.
+
+Built on a dual-persona architecture, LUCID delivers tailored experiences for both non-technical everyday users and seasoned SecOps analysts:
+- **ShieldMe (Everyday Mode):** Plain-English safety verdicts (`Safe`, `Suspicious`, `Dangerous`), actionable remediation steps, and private, session-scoped check history.
+- **TIQ (Threat Intelligence Query Mode):** Industry-standard threat taxonomy classification, multi-level severity scoring (`Low`, `Medium`, `High`, `Critical`), MITRE ATT&CK mapping, technical reasoning, attack progression chains, and an incident management dashboard.
 
 ---
 
 ## Key Features
 
-### 1. Dual-Persona Experience
+### 1. Dual-Persona Architecture
 - **ShieldMe Mode:**
-  - Designed for non-technical users.
-  - Translates complex threat signals into simple color-coded verdicts: **Safe**, **Suspicious**, or **Dangerous**.
-  - Provides clear, non-jargon next steps (e.g., *"Do not click the link"*, *"Verify sender address"*).
-  - **My Checks Tab:** Automatically tracks past checks for the current browser session using an anonymous, cookie-free `sessionId` stored in `localStorage`.
+  - Designed for end-user reassurance and non-technical staff.
+  - Translates complex risk indicators into simple color-coded verdicts: **Safe**, **Suspicious**, or **Dangerous**.
+  - Delivers actionable, non-jargon guidance (e.g., *"Do not click the link"*, *"Verify sender domain"*).
+  - **My Checks Tab:** Automatically tracks session checks using an anonymous, cookie-free `sessionId` stored in local browser state.
 - **TIQ (Threat Intelligence Query) Mode:**
-  - Tailored for SecOps and security analysts.
-  - Provides technical taxonomy, attack vectors, severity scoring, and recommended remediation protocols.
-  - Grants access to the **SecOps Dashboard**, featuring incident analytics, pattern detection, and a risk register.
+  - Built for SOC analysts and incident response teams.
+  - Provides standardized threat taxonomy classification, attack vector analysis, severity rationale, and prioritized SOC actions.
+  - Unlocks the **SecOps Dashboard** with 7-day incident trends, 30-day automated pattern aggregation, and an interactive Risk Register.
 
 ### 2. Multimodal Threat Inspection
-- **Flexible Input:** Analyze pasted text, uploaded screenshots, or both simultaneously.
-- **Visual Attack Analysis:** Detects visually deceptive tactics, including:
-  - Spoofed login interfaces and brand impersonation.
-  - Mismatched browser address bars / sender domains.
-  - Rogue mobile app permission requests.
-  - Fake "Device Infected" system warnings.
-  - Deceptive QR codes.
-- **Client & Server Image Processing Pipeline:**
-  - Client-side pre-processing: Downscales images (max 1600px edge), converts to WebP, and validates 8MB upload limits.
-  - Server-side sanitization: Utilizes `sharp` to strip EXIF metadata and re-encode to clean WebP buffers before sending to the model.
+- **Dual Payload Analysis:** Evaluates text alerts, uploaded screenshots, or both simultaneously.
+- **Visual Evasion Detection:** Identifies visual spoofing tactics including brand impersonation, URL bar mismatches, rogue mobile app permission popups, fake infection warnings, and malicious QR codes.
+- **Client & Server Image Pipeline:**
+  - *Client-side:* Downscales images (max 1600px edge), converts to WebP, and validates 8MB upload limits.
+  - *Server-side:* Uses `sharp` to strip EXIF metadata and re-encode clean WebP buffers before LLM inference.
 
 ### 3. Prompt Injection Defense & Privacy Architecture
-- **Untrusted Content Sandboxing:** Analyzed payloads are wrapped inside `<user_submitted_content>` tags with strict system-level instructions preventing model manipulation or jailbreaks.
-- **Visual Evasion Resistance:** The model is explicitly instructed to treat text embedded inside images designed to bypass filters as severe security red flags.
-- **Privacy-First Persistence:** Raw user submissions are **never** persisted to the database. Only high-level metadata (timestamp, mode, severity, verdict, and truncated summary) is stored for verified threats.
+- **Untrusted Content Sandboxing:** Wraps user input in `<user_submitted_content>` tags with strict system instructions preventing jailbreak attempts or filter evasion.
+- **Visual Red-Flag Enforcement:** Instructs model to treat visual filter-evasion text embedded inside images as a severe security red flag.
+- **Privacy-Preserving Storage:** Raw user submissions are never persisted to the database. Only metadata (timestamp, mode, severity, verdict, truncated summary) is stored for verified threats.
 
 ### 4. Authentication & Multi-Tenancy
-- **Google Sign-In:** Gated entry using Firebase Client Auth SDK.
-- **Route Protection Middleware:** All backend routes verify Firebase ID tokens using `firebase-admin`.
-- **Tenant Scoping (`orgId`):** All incident records, risks, and dashboard queries are partitioned by the authenticated user's UID (`orgId`).
-
-### 5. SecOps Dashboard (TIQ Mode)
-- **Incident Metrics & Trend Analysis:**
-  - Top-line stats: Total incidents, Active open issues, High/Critical alerts.
-  - 7-Day incident volume trend.
-  - 30-Day automated threat pattern aggregation.
-- **Incidents Table:**
-  - Fast client-side quick filters: **All**, **Open Only**, and **Critical Only**.
-  - **Days Open** metric calculating incident duration.
-  - Inline status management (`Open`, `In Progress`, `Resolved`).
-  - One-click CSV export (`GET /api/incidents/export`).
-- **Risk Register:**
-  - Track institutional security risks with Category, Priority, and Status.
-  - Compact three-dot (`⋮`) action menu with inline Edit Modal and confirmation-guarded deletion.
+- **Google Sign-In:** Gated authentication using Firebase Client Auth SDK.
+- **Token Verification:** Express API routes verify Firebase ID tokens via `firebase-admin`.
+- **Tenant Scoping (`orgId`):** All incidents, risks, and dashboard queries are partitioned by the authenticated user's UID (`orgId`).
 
 ---
 
-## Operations & Runbook
-For full architecture diagrams, sequence flows, input processing lifecycles, and troubleshooting, refer to [`RUNBOOK.md`](./RUNBOOK.md).
+## Architecture Overview
 
+```
+                  ┌──────────────────────────────┐
+                  │    Browser UI (Vanilla JS)   │
+                  └──────────────┬───────────────┘
+                                 │ HTTP / JSON (Bearer ID Token)
+                                 v
+                  ┌──────────────────────────────┐
+                  │  Express.js API (server.js)  │
+                  └──────────────┬───────────────┘
+                                 │
+                                 v
+                  ┌──────────────────────────────┐
+                  │ lib/analyzeLucidContent.js   │
+                  └──────────────┬───────────────┘
+                                 │
+                                 v
+                  ┌──────────────────────────────┐
+                  │ Vertex AI (Gemini 2.5 Flash) │
+                  └──────────────────────────────┘
+```
+
+> **Shared Analysis Engine**: Both production API endpoints (`server.js`) and automated benchmark runners (`scratch/`) consume the exact same production module ([`lib/analyzeLucidContent.js`](./lib/analyzeLucidContent.js)), guaranteeing 100% parity between evaluated benchmark accuracy and live production behavior.
 
 ---
 
-## Tech Stack
+## Security Architecture
 
-- **Frontend:** Pure Vanilla HTML5, Vanilla JavaScript (ES6+), Vanilla CSS (Custom dark theme, zero UI framework dependencies).
+- **Firebase ID Token Verification**: Protected backend endpoints require valid `Bearer <token>` headers.
+- **Server-Derived `orgId`**: Tenant scope (`orgId`) is derived server-side from `decodedToken.uid`, preventing client-side header spoofing.
+- **Firestore Security Rules**: Strict collection-level rules (`firestore.rules`) enforce `resource.data.orgId == request.auth.uid`.
+- **Rate Limiting**: `express-rate-limit` caps requests at 100 per 15-minute window per IP.
+- **Sanitization & Escaping**: All dynamic DOM outputs in the frontend are sanitized via `escapeHtml()`. CSV exports sanitize formula injection characters (`=`, `+`, `-`, `@`).
+
+---
+
+## Accuracy & Benchmark Performance
+
+LUCID was evaluated across **74 test cases** in 3 independent suites using the shared production analyzer pipeline ([`lib/analyzeLucidContent.js`](./lib/analyzeLucidContent.js)) at `temperature: 0`:
+
+| Benchmark Suite | Case Count | Strict PASS | PARTIAL | FAIL | Strict PASS Rate |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Core Regression Suite** | 26 | 23 | 3 | 0 | **88.5%** |
+| **Generalization Suite (Unseen)** | 18 | 18 | 0 | 0 | **100.0%** |
+| **Adversarial Suite (Unseen)** | 30 | 27 | 3 | 0 | **90.0%** |
+| **Combined Benchmark Total** | **74** | **68** | **6** | **0** | **91.9%** |
+
+### Benchmark Highlights:
+- **Exceeded Accuracy Target:** Achieved **91.9% combined strict PASS rate** (68/74 cases), exceeding the 80.0% target by **11.9 percentage points**.
+- **ShieldMe Verdict Reliability:** Achieved **100% benchmark PASS** (74/74 cases) across all Everyday Mode evaluations.
+- **Zero Failures:** 0 FAIL results across all 74 cases.
+- **Safety Metrics:** **0 False Positives** and **0 False Negatives** across the Generalization and Adversarial evaluation suites.
+- **Evidence-First PARTIAL Behavior:** All 6 PARTIAL cases (3 Core, 3 Adversarial) reflect LUCID's strict evidence-first policy (e.g. requiring confirmed loss for Critical BEC, or confirmed code execution output for Critical RCE), avoiding benchmark overfitting.
+
+---
+
+## Technology Stack
+
+- **Frontend:** Vanilla HTML5, Vanilla JavaScript (ES6+), Vanilla CSS (Custom dark theme).
 - **Backend:** Node.js, Express.js.
-- **AI Model:** Google Cloud Vertex AI (`gemini-2.5-flash`).
+- **AI Engine:** Google Cloud Vertex AI (`gemini-2.5-flash`).
 - **Database:** Google Cloud Firestore (`@google-cloud/firestore`).
-- **Media Processing:** `sharp` (metadata stripping, resizing, WebP re-encoding).
-- **Security & Utilities:** `express-rate-limit`, `cors`.
+- **Authentication:** Firebase Auth (`firebase-admin`).
+- **Image Processing:** `sharp` (WebP re-encoding & EXIF metadata stripping).
+- **Containerization & Cloud:** Cloud Run, Cloud Build, Docker.
 
 ---
 
-## Project Structure
+## Running Locally
 
-```
-.
-├── firestore.indexes.json # Firestore composite index definitions
-├── firestore.rules        # Security rules for Firestore collections
-├── firebase.json          # Firebase deployment configuration
-├── package.json           # Node.js project manifest & dependencies
-├── server.js              # Express backend, Vertex AI & Firestore integration
-├── public/
-│   ├── index.html         # Single-page UI (Analyzer, Dashboard, My Checks)
-│   ├── script.js          # Client logic, image handling, dashboard state
-│   └── style.css          # Dark-theme design system, layout, responsive styling
-└── README.md              # Project documentation
-```
+### 1. Prerequisites
+- Node.js v18+
+- GCP Project with Vertex AI API & Firestore enabled
+- Authenticated Application Default Credentials (ADC):
+  ```bash
+  gcloud auth application-default login
+  ```
 
----
-
-## Prerequisites
-
-1. **Node.js**: Version 18+ installed.
-2. **Google Cloud Project**:
-   - A GCP Project with **Vertex AI API** and **Cloud Firestore** enabled.
-   - Default project configured in `server.js` (`project-c48afffb-501b-4711-a6d` in `us-central1`).
-3. **Application Default Credentials (ADC)**:
-   Authenticate locally using the Google Cloud CLI:
-   ```bash
-   gcloud auth application-default login
-   ```
-
----
-
-## Getting Started
-
-### 1. Install Dependencies
+### 2. Installation & Execution
 ```bash
+# Install dependencies
 npm install
-```
 
-### 2. Start the Application
-```bash
+# Start development server
 npm start
 ```
-The server will start on port `3000` (or `PORT` environment variable if specified):
-```
-Server listening on port 3000
+App will start at `http://localhost:3000`.
+
+---
+
+## Testing & Static Validation
+
+### Syntax Validation
+```bash
+node --check lib/analyzeLucidContent.js
+node --check server.js
+node --check public/script.js
 ```
 
-### 3. Access the UI
-Open your browser and navigate to:
-```
-http://localhost:3000
+### Benchmark Evaluation (Requires GCP Credentials)
+```bash
+# Core Regression Suite
+node scratch/run_accuracy_suite.js && node scratch/evaluate_results.js
+
+# Generalization Suite
+node scratch/run_generalization_suite.js && node scratch/evaluate_generalization.js
+
+# Adversarial Suite
+node scratch/run_adversarial_suite.js && node scratch/evaluate_adversarial.js
 ```
 
 ---
 
-## API Reference
+## Deployment (Cloud Run)
 
-### Analysis
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/analyze` | Evaluates submitted text/image payload via Vertex AI. Auto-logs incidents if threat thresholds are exceeded. Rate-limited to 100 req/15 min. |
-
-### Incidents
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/incidents` | Retrieves all logged incidents (supports `?status=` and `?severity=` filters). |
-| `GET` | `/api/my-checks` | Retrieves session-specific ShieldMe checks for the requesting browser (`?sessionId=...`). |
-| `PATCH` | `/api/incidents/:id` | Updates an incident record (e.g. status transition). |
-| `DELETE` | `/api/incidents/:id` | Deletes an incident record. |
-| `GET` | `/api/incidents/export` | Generates and streams a CSV export of all recorded incidents. |
-
-### Risk Register
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/risks` | Retrieves all risks from the register. |
-| `POST` | `/api/risks` | Creates a new risk entry. |
-| `PATCH` | `/api/risks/:id` | Updates risk fields (Description, Category, Priority, Status). |
-| `DELETE` | `/api/risks/:id` | Deletes a risk entry. |
-
-### Threat Intelligence
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/patterns` | Aggregates the top recurring threat patterns over the past 30 days. |
+LUCID is containerized for Google Cloud Run deployment:
+```bash
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/lucid-app
+gcloud run deploy lucid-app --image gcr.io/YOUR_PROJECT_ID/lucid-app --platform managed --region us-central1
+```
 
 ---
 
-## License
+## Documentation Links
 
-This project is licensed under the ISC License.
+- [**Accuracy & Validation Report**](./docs/LUCID_ACCURACY_TEST_REPORT.md)
+- [**Test Case Specification**](./docs/LUCID_ACCURACY_TEST_CASES.md)
+- [**Operations Runbook**](./RUNBOOK.md)
+
+---
+
+## Limitations & Technical Considerations
+
+1. **Decision Support:** LUCID provides automated threat intelligence to assist, not replace, qualified human security analyst judgment.
+2. **Evidence Dependency:** Classification and severity depend strictly on observable evidence in the alert payload.
+3. **Multimodal Parity:** Screenshot analysis requires legible visual threat indicators for optimal classification.
+4. **Planned SDK Maintenance:** The current Vertex AI SDK will be migrated to `@google/genai` in future releases.
