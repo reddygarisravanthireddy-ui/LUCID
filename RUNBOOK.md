@@ -84,8 +84,12 @@ sequenceDiagram
 #### Step 6: Isolated Firestore Incident Persistence (Non-Blocking)
 1. If a threat is detected (`Suspicious`/`Dangerous` in ShieldMe, or `Medium`/`High`/`Critical` in TIQ), an incident record is logged to Firestore asynchronously.
 
+#### My Checks History & Persistence Behavior
+ShieldMe history is intentionally threat-focused. Analyses classified as Suspicious or Dangerous may be persisted to incident history. Safe analyses are returned normally to the user but are not stored in My Checks History. This keeps the history focused on checks that may require attention.
+
 #### Step 7: Client Result Presentation
 1. Renders results dynamically with XSS protection via `escapeHtml()`.
+2. Both ShieldMe and TIQ result views display a subtle inline disclaimer: *"AI-generated analysis can make mistakes. Verify important security decisions."*
 
 ---
 
@@ -175,9 +179,9 @@ node scratch/run_adversarial_suite.js && node scratch/evaluate_adversarial.js
 ## 6. Current Benchmark Status
 
 - **Core Suite (26 cases):** 23 PASS (88.5%), 3 PARTIAL (11.5%), 0 FAIL. ShieldMe 26/26 (100%).
-- **Generalization Suite (18 cases):** 18 PASS (100%), 0 PARTIAL, 0 FAIL. ShieldMe 18/18 (100%), 0 FP, 0 FN.
+- **Generalization Suite (18 cases):** 17 PASS (94.4%), 1 PARTIAL (5.6%), 0 FAIL. ShieldMe 18/18 (100%), 0 FP, 0 FN.
 - **Adversarial Suite (30 cases):** 27 PASS (90.0%), 3 PARTIAL (10.0%), 0 FAIL. ShieldMe 30/30 (100%), 0 FP, 0 FN.
-- **Combined Benchmark (74 cases):** **68 PASS (91.9%)**, 6 PARTIAL (8.1%), 0 FAIL. ShieldMe **74/74 (100%)**.
+- **Combined Benchmark (74 cases):** **67 PASS (90.5%)**, 7 PARTIAL (9.5%), 0 FAIL. ShieldMe **74/74 (100%)**.
 
 ---
 
@@ -197,4 +201,5 @@ node scratch/run_adversarial_suite.js && node scratch/evaluate_adversarial.js
 - **v1.5.0 — Dashboard Filters & Incident Aging:** Added TIQ Dashboard quick-filters and "Days Open" aging indicator.
 - **v1.6.0 — Formal Accuracy Test Suite:** Executed initial 26-case accuracy benchmark.
 - **v1.7.0 — Multi-Suite Accuracy & Generalization Optimization:** Expanded benchmark coverage across Core, Generalization, and Adversarial suites.
-- **v2.0.0 — Shared Production Architecture & Final 91.9% Benchmark:** Refactored benchmark runners to execute through the shared production analyzer module (`lib/analyzeLucidContent.js`). Achieved **91.9% combined strict PASS rate** (68/74 cases), **100% ShieldMe PASS** (74/74 cases), **0 False Positives**, **0 False Negatives**, and 0 FAIL results across all 74 benchmark test cases.
+- **v2.0.0 — Shared Production Architecture & 91.9% Pre-Fix Benchmark:** Refactored benchmark runners to execute through the shared production analyzer module (`lib/analyzeLucidContent.js`).
+- **v2.1.0 — Multimodal Temporal Hardening & Final Release Benchmark:** Applied targeted temporal reasoning fix to prevent false-positive login anomaly classifications from valid notification timestamps. Achieved **90.5% combined strict PASS rate** (67/74 cases) in controlled benchmark validation, **100% ShieldMe PASS** (74/74 cases), **0 False Positives**, **0 False Negatives**, and 0 FAIL results.

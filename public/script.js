@@ -382,6 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </ul>
                         </div>
                     ` : ''}
+                    <p class="ai-disclaimer" style="margin-top: 16px; font-size: 0.8rem; color: var(--text-secondary, #9ba1a6); text-align: center;">AI-generated analysis can make mistakes. Verify important security decisions.</p>
                 </div>
             `;
             resultsContainer.appendChild(card);
@@ -458,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <p>${recAction}</p>
                         </div>
                     </div>
+                    <p class="ai-disclaimer" style="margin-top: 16px; font-size: 0.8rem; color: var(--text-secondary, #9ba1a6); text-align: center;">AI-generated analysis can make mistakes. Verify important security decisions.</p>
                 </div>
             `;
             resultsContainer.appendChild(card);

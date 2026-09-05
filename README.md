@@ -2,6 +2,8 @@
 
 > **Clarity in the face of chaos.**
 
+**Live Application:** [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
+
 **LUCID** is an enterprise-grade AI security analysis platform designed to transform complex, multi-vector threat signals into clear, actionable intelligence. It inspects untrusted text payloads and visual artifacts (such as phishing emails, smishing SMS, fake authentication portals, deceptive permission prompts, fraudulent popups, and malicious QR codes) using multimodal AI.
 
 Built on a dual-persona architecture, LUCID delivers tailored experiences for both non-technical everyday users and seasoned SecOps analysts:
@@ -81,21 +83,21 @@ Built on a dual-persona architecture, LUCID delivers tailored experiences for bo
 
 ## Accuracy & Benchmark Performance
 
-LUCID was evaluated across **74 test cases** in 3 independent suites using the shared production analyzer pipeline ([`lib/analyzeLucidContent.js`](./lib/analyzeLucidContent.js)) at `temperature: 0`:
+LUCID was evaluated across **74 test cases** in 3 independent benchmark suites using the shared production analyzer pipeline ([`lib/analyzeLucidContent.js`](./lib/analyzeLucidContent.js)) at `temperature: 0`:
 
 | Benchmark Suite | Case Count | Strict PASS | PARTIAL | FAIL | Strict PASS Rate |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Core Regression Suite** | 26 | 23 | 3 | 0 | **88.5%** |
-| **Generalization Suite (Unseen)** | 18 | 18 | 0 | 0 | **100.0%** |
+| **Generalization Suite (Unseen)** | 18 | 17 | 1 | 0 | **94.4%** |
 | **Adversarial Suite (Unseen)** | 30 | 27 | 3 | 0 | **90.0%** |
-| **Combined Benchmark Total** | **74** | **68** | **6** | **0** | **91.9%** |
+| **Combined Benchmark Total** | **74** | **67** | **7** | **0** | **90.5%** |
 
-### Benchmark Highlights:
-- **Exceeded Accuracy Target:** Achieved **91.9% combined strict PASS rate** (68/74 cases), exceeding the 80.0% target by **11.9 percentage points**.
+### Controlled Benchmark Validation Highlights:
+- **Exceeded Accuracy Target:** Achieved **90.5% combined strict PASS rate** (67/74 cases) in controlled benchmark validation, exceeding the 80.0% project target by **10.5 percentage points**.
 - **ShieldMe Verdict Reliability:** Achieved **100% benchmark PASS** (74/74 cases) across all Everyday Mode evaluations.
 - **Zero Failures:** 0 FAIL results across all 74 cases.
-- **Safety Metrics:** **0 False Positives** and **0 False Negatives** across the Generalization and Adversarial evaluation suites.
-- **Evidence-First PARTIAL Behavior:** All 6 PARTIAL cases (3 Core, 3 Adversarial) reflect LUCID's strict evidence-first policy (e.g. requiring confirmed loss for Critical BEC, or confirmed code execution output for Critical RCE), avoiding benchmark overfitting.
+- **Safety Metrics:** **0 False Positives** and **0 False Negatives** across the evaluation suites (0 malicious-to-safe regressions).
+- **Evidence-First PARTIAL Behavior:** All 7 PARTIAL cases (3 Core, 1 Generalization, 3 Adversarial) reflect LUCID's strict evidence-first policy (e.g. requiring confirmed loss for Critical BEC, or confirmed code execution output for Critical RCE), avoiding benchmark overfitting.
 
 ---
 
@@ -164,10 +166,13 @@ gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/lucid-app
 gcloud run deploy lucid-app --image gcr.io/YOUR_PROJECT_ID/lucid-app --platform managed --region us-central1
 ```
 
+Live deployment: [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
+
 ---
 
 ## Documentation Links
 
+- [**End-User Guide**](./USER_GUIDE.md)
 - [**Accuracy & Validation Report**](./docs/LUCID_ACCURACY_TEST_REPORT.md)
 - [**Test Case Specification**](./docs/LUCID_ACCURACY_TEST_CASES.md)
 - [**Operations Runbook**](./RUNBOOK.md)
