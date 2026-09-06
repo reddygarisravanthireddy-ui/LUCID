@@ -1,7 +1,11 @@
-# LUCID End-User & Analyst Guide
+<p align="center">
+  <img src="/public/assets/branding/lucid-icon-256.png" alt="LUCID Logo" width="72" height="72">
+</p>
+
+# LUCID — User Guide
 
 > **Clarity Through the Chaos.**  
-> *AI-Powered Threat Analysis & Security Workspace*  
+> *AI-powered security analysis for everyday users and security analysts.*<br>
 > *Application URL:* [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
 
 ---

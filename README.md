@@ -1,6 +1,11 @@
-# LUCID — Dual-Persona AI Security & Threat Intelligence Platform
+<p align="center">
+  <img src="./public/assets/branding/lucid-icon-256.png" alt="LUCID Logo" width="80" height="80">
+</p>
 
-> **Clarity Through the Chaos.**
+# LUCID
+
+> **Clarity Through the Chaos.**<br>
+> *AI-powered security analysis for everyday users and security analysts.*
 
 **Live Application:** [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
 
