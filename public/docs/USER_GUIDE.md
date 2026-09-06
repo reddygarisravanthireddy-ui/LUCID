@@ -1,6 +1,7 @@
 # LUCID End-User & Analyst Guide
 
-> **AI-Powered Threat Analysis & Security Workspace**  
+> **Clarity Through the Chaos.**  
+> *AI-Powered Threat Analysis & Security Workspace*  
 > *Application URL:* [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
 
 ---

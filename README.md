@@ -1,6 +1,6 @@
 # LUCID — Dual-Persona AI Security & Threat Intelligence Platform
 
-> **Clarity in the face of chaos.**
+> **Clarity Through the Chaos.**
 
 **Live Application:** [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
 
@@ -172,10 +172,11 @@ Live deployment: [https://lucid-264271786605.us-central1.run.app/](https://lucid
 
 ## Documentation Links
 
-- [**End-User Guide**](./USER_GUIDE.md)
+- [**End-User Guide**](./docs/USER_GUIDE.md)
+- [**Technical System Handbook (PDF)**](./docs/LUCID_Project_Technical_Handbook.pdf)
+- [**Operations Runbook**](./RUNBOOK.md)
 - [**Accuracy & Validation Report**](./docs/LUCID_ACCURACY_TEST_REPORT.md)
 - [**Test Case Specification**](./docs/LUCID_ACCURACY_TEST_CASES.md)
-- [**Operations Runbook**](./RUNBOOK.md)
 
 ---
 
