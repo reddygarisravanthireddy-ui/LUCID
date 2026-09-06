@@ -34,6 +34,7 @@ Follow these steps to perform an analysis:
 
 1. **Access LUCID:** Navigate to [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/).
 2. **Sign In:** Click **Sign in with Google** to authenticate securely via Firebase Authentication.
+   - **Session behavior:** Refreshing the active LUCID page keeps you signed in. In the verified production browser flow, closing the LUCID tab ends the session; reopening LUCID requires Google Sign-In again. Clicking **Logout** also ends the authenticated session.
 3. **Select Mode:**
    - Keep the toggle set to **ShieldMe** for standard everyday analysis.
    - Switch the toggle to **TIQ Mode** for technical threat intelligence analysis.
@@ -180,7 +181,7 @@ LUCID is designed as an **AI-assisted security decision-support tool**. It provi
 
 ## 11. Privacy & Data Isolation
 
-- **Authentication:** User access is authenticated via Google Sign-In and validated server-side using Firebase ID tokens.
+- **Authentication:** User access is authenticated via Google Sign-In using session-scoped Firebase Authentication and validated server-side using Firebase ID tokens. LUCID does not intentionally configure Firebase Auth for persistent local sign-in across browser sessions.
 - **Tenant Isolation:** All saved incident records, risk entries, and dashboard metrics are strictly partitioned by the authenticated user's unique identification ID (`orgId`). Users can only read and write their own data.
 - **Database Persistence:** When an incident record is saved to Firestore, LUCID writes structured metadata (including timestamp, analysis mode, verdict/severity, classification, explanation/reasoning, and a truncated 100-character text summary). Full-text payloads and raw image files are not written to the application's Firestore database.
 

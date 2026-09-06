@@ -44,6 +44,7 @@ Built on a dual-persona architecture, LUCID delivers tailored experiences for bo
 
 ### 4. Authentication & Multi-Tenancy
 - **Google Sign-In:** Gated authentication using Firebase Client Auth SDK.
+- **Session-Scoped Authentication:** Firebase Auth uses browser session persistence. Refreshing the active LUCID page preserves authentication, while closing the LUCID tab ends the verified browser session and reopening LUCID requires Google Sign-In again. Explicit sign-out also terminates the session.
 - **Token Verification:** Express API routes verify Firebase ID tokens via `firebase-admin`.
 - **Tenant Scoping (`orgId`):** All incidents, risks, and dashboard queries are partitioned by the authenticated user's UID (`orgId`).
 

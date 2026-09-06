@@ -62,7 +62,8 @@ sequenceDiagram
 3. **Client Image Downscaling:** Downscales images exceeding 1600px edge dimensions while maintaining aspect ratio, converting to WebP (`quality: 0.8`) Base64.
 
 #### Step 2: Authentication & Token Injection
-1. Client invokes `fetchWithAuth('/api/analyze', ...)`:
+1. **Session Persistence:** Before Google Sign-In, the client configures Firebase Auth with `firebase.auth.Auth.Persistence.SESSION`. Authentication survives page refreshes within the active browser session but does not use persistent local authentication across newly opened LUCID sessions.
+2. Client invokes `fetchWithAuth('/api/analyze', ...)`:
    - Retrieves fresh Firebase ID Token via `auth.currentUser.getIdToken()`.
    - Injects header `Authorization: Bearer <idToken>`.
 
