@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             googleSigninBtn.disabled = true;
             googleSigninBtn.style.opacity = '0.7';
             const provider = new firebase.auth.GoogleAuthProvider();
+            await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
             await auth.signInWithPopup(provider);
         } catch (err) {
             console.error('[Auth] Sign-in error:', err);
