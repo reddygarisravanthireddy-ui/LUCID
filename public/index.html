@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lucid - Analyze Suspicious Text</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260908-5">
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/branding/lucid-icon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/assets/branding/lucid-icon-16.png">
     <link rel="icon" type="image/png" sizes="256x256" href="/assets/branding/lucid-icon-256.png">
-    
+
     <!-- Firebase SDK (Compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -24,7 +24,7 @@
             </div>
             <p class="auth-subtitle">AI-Powered Threat Analysis & Security Workspace</p>
             <p class="auth-desc">Sign in with your Google account to analyze threats, monitor incidents, and manage security risks.</p>
-            
+
             <button id="google-signin-btn" class="btn-google">
                 <svg class="google-icon" width="18" height="18" viewBox="0 0 18 18">
                     <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"/>
@@ -52,57 +52,107 @@
                 <div id="user-profile" class="user-profile">
                     <img id="user-avatar" class="user-avatar" src="" alt="Avatar" style="display:none;">
                     <span id="user-email" class="user-email"></span>
-                    <button id="signout-btn" class="btn-signout" title="Sign Out">Sign Out</button>
                 </div>
             </div>
         </header>
 
-        <nav class="top-nav">
-            <button id="tab-analyzer" class="nav-tab active">Analyzer</button>
-            <button id="tab-my-checks" class="nav-tab">My Checks</button>
-            <button id="tab-dashboard" class="nav-tab hidden">Dashboard</button>
+        <nav class="top-nav sidebar-nav" aria-label="Primary navigation">
+            <div class="sidebar-primary">
+                <button id="tab-analyzer" class="nav-tab active"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12 20 5l-5.4 14-3.1-5.2L4 12Z"/><path d="m11.5 13.8 3.7-3.7"/></svg></span><span>Analyzer</span></button>
+                <button id="tab-my-checks" class="nav-tab"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v5h4M10 12h6M10 16h6"/></svg></span><span>My Checks</span></button>
+                <button id="tab-dashboard" class="nav-tab hidden"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="7" rx="1"/><rect x="14" y="4" width="6" height="4" rx="1"/><rect x="4" y="15" width="6" height="5" rx="1"/><rect x="14" y="12" width="6" height="8" rx="1"/></svg></span><span>Dashboard</span></button>
+                <button id="tab-risk-register" class="nav-tab hidden"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>Risk Register</span></button>
+            </div>
+            <div class="sidebar-footer">
+                <button id="help-btn" class="nav-tab sidebar-utility" type="button"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 0 1 4.7.7c0 1.8-2.5 2.1-2.5 4M12 17.5h.01"/></svg></span><span>Help</span></button>
+                <button id="signout-btn" class="nav-tab sidebar-utility" type="button"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/></svg></span><span>Sign Out</span></button>
+            </div>
         </nav>
 
         <main>
             <div id="view-analyzer">
-                <div class="input-section">
-                <div class="controls">
-                    <label class="toggle-container">
-                        <span class="toggle-label shieldme active" data-tooltip="For everyday people — get a simple safety verdict and clear next steps for suspicious messages, emails, or scams.">ShieldMe</span>
-                        <div class="toggle-switch">
-                            <input type="checkbox" id="mode-toggle">
-                            <span class="slider"></span>
+                <div class="analyzer-hero" aria-hidden="true"></div>
+                <div class="analyzer-intro">
+                    <div class="mode-identity" aria-live="polite">
+                        <span id="mode-identity-icon" class="mode-identity-icon" aria-hidden="true"><svg class="mode-svg mode-svg-shield" viewBox="0 0 48 48"><path d="M24 5 39 11v11c0 10-6.3 17.2-15 21-8.7-3.8-15-11-15-21V11Z"/><path d="M24 12v23M17 19l7-4 7 4"/></svg><svg class="mode-svg mode-svg-tiq" viewBox="0 0 48 48"><path d="M10 38V26h7v12M21 38V18h7v20M32 38V9h7v29"/><path d="M8 38h33"/></svg></span>
+                        <div>
+                            <strong id="mode-identity-name">ShieldMe</strong>
+                            <span id="mode-identity-copy">Everyday Security. Made Simple.</span>
                         </div>
-                        <span class="toggle-label tiq" data-tooltip="For security professionals — get a technical classification, severity rating, and recommended security action for alerts and threats.">TIQ</span>
-                    </label>
-                </div>
-                <div class="upload-area" id="upload-area">
-                    <input type="file" id="file-input" accept="image/png, image/jpeg, image/webp" hidden>
-                    <div class="upload-prompt" id="upload-prompt">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        <p>Drag & drop a screenshot, or <span class="browse-link">browse</span></p>
                     </div>
-                    <div class="image-preview hidden" id="image-preview">
-                        <img id="preview-img" src="" alt="Preview">
-                        <button id="remove-img-btn" class="btn-remove">×</button>
-                    </div>
+                    <h2 id="analyzer-title">Stay Protected. Understand the Risks.</h2>
+                    <p id="analyzer-subtitle">Check suspicious messages, links, files, or screenshots. Get clear, simple guidance.</p>
                 </div>
-                
-                <textarea id="suspicious-text" placeholder="Paste suspicious email, message, or alert here..."></textarea>
-                <button id="check-btn" class="btn-primary">
-                    <span class="btn-text">Check This</span>
-                    <span class="loader hidden"></span>
-                </button>
-            </div>
+                <div class="input-section composer-shell">
+                    <div class="controls composer-controls">
+                        <label class="toggle-container" aria-label="Analysis mode">
+                            <span class="toggle-label shieldme active" tabindex="0" role="button" aria-label="ShieldMe: Best for everyday users. Simple safety verdicts and clear next steps." data-tooltip="Best for everyday users — simple safety verdicts and clear next steps.">ShieldMe</span>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="mode-toggle">
+                                <span class="slider"></span>
+                            </div>
+                            <span class="toggle-label tiq" tabindex="0" role="button" aria-label="TIQ: Best for security analysts. Technical classification, severity, MITRE ATT&CK context, and response guidance." data-tooltip="Best for security analysts — technical findings, MITRE context, and response guidance.">TIQ</span>
+                        </label>
+                        <span id="mode-hint" class="mode-hint">Simple safety guidance</span>
+                    </div>
+                    <div class="composer">
+                        <textarea id="suspicious-text" rows="1" placeholder="Paste a message, link, or describe what looks suspicious..."></textarea>
+                        <div class="attachment-wrap">
+                            <div class="upload-area" id="upload-area"
+     tabindex="0"
+     role="button"
+     aria-label="Upload an image — screenshots, security alerts, or Wireshark and network captures"
+     data-tooltip="Upload image — screenshots, alerts, or Wireshark/network captures">
+                                <input type="file" id="file-input" accept="image/png, image/jpeg, image/webp" hidden>
+                                <div class="upload-prompt" id="upload-prompt">
+                                    <span class="attach-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8.5 12.5 14.8 6.2a3.2 3.2 0 0 1 4.5 4.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8-8"/><path d="m7.8 14.2 7.5-7.5a1.5 1.5 0 0 1 2.1 2.1l-7.7 7.7a2.8 2.8 0 0 1-4-4l7-7"/></svg></span><span>Attach screenshot</span>
+                                </div>
+                                <div class="image-preview hidden" id="image-preview">
+                                    <img id="preview-img" src="" alt="Attached screenshot preview">
+                                    <span class="attachment-label">Screenshot attached</span>
+                                    <button id="remove-img-btn" class="btn-remove" type="button" aria-label="Remove image">×</button>
+                                </div>
+                            </div>
+                            <div class="upload-area doc-upload-area" id="doc-upload-area"
+     tabindex="0"
+     role="button"
+     aria-label="Upload a file — PDF, DOCX, CSV, TXT, logs, or source code"
+     data-tooltip="Upload file — PDF, DOCX, CSV, TXT, logs, or source code">
+                                <input type="file" id="doc-file-input" accept=".txt,.log,.md,.csv,.pdf,.docx,.js,.ts,.py,.ps1,.sh,.php,.html,.java,.c,.cpp,.cs,.go,.rb,.sql,.yaml,.yml,.json,.xml" hidden>
+                                <div class="upload-prompt" id="doc-upload-prompt">
+                                    <span class="attach-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span><span>Upload file / code</span>
+                                </div>
+                                <div class="image-preview hidden" id="doc-preview">
+                                    <span class="doc-icon" aria-hidden="true">📄</span>
+                                    <span id="doc-name-label" class="attachment-label">File attached</span>
+                                    <button id="remove-doc-btn" class="btn-remove" type="button" aria-label="Remove file">×</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="composer-footer">
+                            <button id="check-btn" class="btn-primary composer-submit">
+                                <span class="btn-text">Analyze</span>
+                                <span class="loader hidden"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="example-chips" class="example-chips" aria-label="Examples">
+                        <span>Try an example:</span>
+                        <button type="button" data-example="Suspicious text message asking you to click an urgent payment link.">Suspicious text message</button>
+                        <button type="button" data-example="A login page URL that looks similar to a real company domain but is slightly misspelled.">Fake login page</button>
+                        <button type="button" data-example="An email claims your account will be suspended unless you verify immediately using an unfamiliar link.">Phishing email</button>
+                    </div>
+                    <p class="composer-note">Avoid submitting passwords, authentication tokens, private keys, or other secrets.</p>
+                </div>
 
             <div id="results-container" class="results-section hidden">
                 <!-- Results will be injected here -->
             </div>
-            
+
             <div id="clear-container" class="clear-section hidden">
                 <button id="clear-btn" class="btn-clear">Clear Results</button>
             </div>
-            
+
             <div id="error-container" class="error-section hidden">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                 <p id="error-message">Unable to verify — proceed with caution.</p>
@@ -110,16 +160,20 @@
             </div> <!-- End view-analyzer -->
 
             <div id="view-my-checks" class="hidden">
-                <div class="my-checks-header">
-                    <h2>My Checks History</h2>
-                    <p>A history of ShieldMe checks that may need your attention.</p>
+                <div class="section-page-header">
+                    <div><h2>My Checks</h2><p>A history of ShieldMe checks that may need your attention.</p></div>
+                    <div class="search-box"><span>⌕</span><input id="my-checks-search" type="search" placeholder="Search checks..." autocomplete="off"></div>
                 </div>
                 <div id="my-checks-list" class="my-checks-container">
                     <!-- Loaded via JS -->
                 </div>
+                <div id="my-checks-pagination" class="pagination hidden" aria-label="My Checks pagination"></div>
             </div> <!-- End view-my-checks -->
 
             <div id="view-dashboard" class="hidden">
+                <div class="section-page-header dashboard-title-row">
+                    <div><h2>TIQ Dashboard</h2><p>A consolidated view of security incidents and trends.</p></div>
+                </div>
                 <div class="dashboard-grid">
                     <div class="stat-card">
                         <h3>Total Incidents</h3>
@@ -137,22 +191,22 @@
 
                 <div class="dashboard-row">
                     <div class="dashboard-panel pattern-panel">
-                        <h3>Detected Patterns (Last 30 Days)</h3>
+                        <h3>Top Attack Types (Last 30 Days)</h3>
                         <ul id="patterns-list" class="pattern-list">
                             <li>Loading...</li>
                         </ul>
                     </div>
                     <div class="dashboard-panel trend-panel">
-                        <h3>Incidents Over Time (Last 7 Days)</h3>
-                        <ul id="trend-list" class="trend-list">
-                            <li>Loading...</li>
-                        </ul>
+                        <h3>Incident Volume (Last 7 Days)</h3>
+                        <div id="trend-list" class="trend-list" aria-live="polite">
+                            <span class="chart-loading">Loading...</span>
+                        </div>
                     </div>
                 </div>
 
                 <div class="dashboard-panel">
                     <div class="panel-header">
-                        <h3>Incidents</h3>
+                        <h3>Recent Incidents</h3>
                         <div class="header-actions">
                             <div class="filter-group">
                                 <button class="btn-filter active" data-filter="all">All</button>
@@ -166,11 +220,10 @@
                         <table class="data-table" id="incidents-table">
                             <thead>
                                 <tr>
-                                    <th>Date</th>
-                                    <th>Days Open</th>
-                                    <th>Mode</th>
-                                    <th>Input</th>
-                                    <th>Classification</th>
+                                    <th>Incident ID</th>
+                                    <th>Date &amp; Time</th>
+                                    <th>Source</th>
+                                    <th>Issue Summary</th>
                                     <th>Severity</th>
                                     <th>Status</th>
                                 </tr>
@@ -180,13 +233,14 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="incidents-pagination" class="pagination hidden" aria-label="Incidents pagination"></div>
                 </div>
+            </div> <!-- End view-dashboard -->
 
-                <div class="dashboard-panel">
-                    <div class="panel-header">
-                        <h3>Risk Register</h3>
-                        <button id="add-risk-btn" class="btn-primary-small">Add Risk</button>
-                    </div>
+            <div id="view-risk-register" class="hidden">
+                <div class="section-page-header"><div><h2>Risk Register</h2><p>Track and manage key security risks.</p></div><button id="add-risk-btn" class="btn-primary-small">+ Add Risk</button></div>
+<div class="dashboard-panel risk-register-panel">
+
                     <div class="table-container">
                         <table class="data-table" id="risks-table">
                             <thead>
@@ -203,23 +257,140 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="risks-pagination" class="pagination hidden" aria-label="Risk Register pagination"></div>
                 </div>
-            </div> <!-- End view-dashboard -->
+            </div> <!-- End view-risk-register -->
 
         </main>
+    </div>
+
+    <!-- Lightweight Help Modal -->
+    <div id="help-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <div class="modal-content help-modal-content">
+            <div class="modal-title-row">
+                <div>
+                    <h3 id="help-title">LUCID Help</h3>
+                    <p class="help-intro">Clarity Through the Chaos.</p>
+                </div>
+                <button id="help-close-x" class="modal-close" aria-label="Close help">×</button>
+            </div>
+
+            <div class="help-grid">
+
+                <section>
+                    <h4>How to Analyze</h4>
+                    <p>Paste a suspicious email, message, URL, security alert, log, or code, or upload a supported file or image. Choose <strong>ShieldMe</strong> or <strong>TIQ</strong>, then select <strong>Analyze</strong>.</p>
+                </section>
+
+                <section>
+                    <h4>ShieldMe</h4>
+                    <p>Designed for everyday users. ShieldMe explains whether submitted evidence appears <strong>Safe</strong>, <strong>Suspicious</strong>, or <strong>Dangerous</strong> and provides clear recommended next steps.</p>
+                </section>
+
+                <section>
+                    <h4>TIQ</h4>
+                    <p>Designed for security analysts. TIQ provides technical classification, severity, key indicators, MITRE ATT&amp;CK context, technical reasoning, confidence, and recommended security or SOC actions.</p>
+                </section>
+
+                <section>
+                    <h4>File &amp; Image Uploads</h4>
+                    <p>LUCID supports readable content from <strong>PDF, DOCX, CSV, TXT, log files, supported source-code files</strong>, screenshots, security-alert images, and <strong>Wireshark/network-capture screenshots</strong>.</p>
+                </section>
+
+                <section>
+                    <h4>File Analysis Safety</h4>
+                    <p>Uploaded files are treated as evidence and are <strong>not executed</strong>. LUCID safely extracts and analyzes content it can read. Unsupported, unreadable, corrupted, or encrypted files may return <strong>Inconclusive</strong>.</p>
+                </section>
+
+                <section>
+                    <h4>Important File Limitation</h4>
+                    <p>LUCID analyzes the content it can read from a file. A result does <strong>not guarantee that the entire file is safe</strong>. A malicious-content value of <strong>not detected</strong> means malicious indicators were not identified in the available content, not that the complete file has been proven safe.</p>
+                </section>
+
+                <section>
+                    <h4>My Checks</h4>
+                    <p><strong>My Checks</strong> contains your ShieldMe analysis history. It lets you review previous everyday-security checks, verdicts, explanations, and guidance.</p>
+                </section>
+
+                <section>
+                    <h4>TIQ Dashboard</h4>
+                    <p>The Dashboard provides a consolidated analyst view of incidents, severity, status, attack patterns, and incident trends. Select an incident row to open its detailed investigation view.</p>
+                </section>
+
+                <section>
+                    <h4>Incident Correlation</h4>
+                    <p>When the <strong>exact same evidence</strong> is analyzed in ShieldMe and TIQ, LUCID can correlate the analyses into one incident instead of creating unnecessary duplicate incidents.</p>
+                </section>
+
+                <section>
+                    <h4>24-Hour Correlation Rule</h4>
+                    <p>Matching evidence is correlated only when the existing matching incident is <strong>Open</strong> or <strong>In Progress</strong> and was created within the previous <strong>24 hours</strong>. <strong>Resolved</strong> or older incidents are not reused; a later analysis creates a new incident.</p>
+                </section>
+
+                <section>
+                    <h4>Analyst Workflow</h4>
+                    <p>Open an incident from the TIQ Dashboard, review the technical analysis, investigate the evidence, record what was done in <strong>Analyst Action / Resolution Notes</strong>, then update the incident status.</p>
+                </section>
+
+                <section>
+                    <h4>Resolving Incidents</h4>
+                    <p>LUCID requires investigation or action notes before an incident can be marked <strong>Resolved</strong>. Saved notes and status remain available when the incident is reopened.</p>
+                </section>
+
+                <section>
+                    <h4>Risk Register</h4>
+                    <p>TIQ's <strong>Risk Register</strong> lets analysts record and manage security risks using a description, category, priority, and status.</p>
+                </section>
+
+                <section>
+                    <h4>Switching Modes</h4>
+                    <p>ShieldMe provides plain-language security guidance and <strong>My Checks</strong>. TIQ provides technical analysis plus analyst tools including the <strong>Dashboard</strong> and <strong>Risk Register</strong>.</p>
+                </section>
+
+                <section>
+                    <h4>Clear Results</h4>
+                    <p>Select <strong>Clear Results</strong> to remove the current analysis from the screen and return to the Analyzer. This does <strong>not</strong> delete saved incidents, My Checks history, resolution notes, or Risk Register entries.</p>
+                </section>
+
+                <section>
+                    <h4>What LUCID Does Not Do</h4>
+                    <p>LUCID does not execute uploaded files, perform sandbox or dynamic malware analysis, inspect behavior hidden inside encrypted or unreadable content, or guarantee that a file, account, device, or system is safe.</p>
+                </section>
+
+                <section>
+                    <h4>When Additional Verification Is Needed</h4>
+                    <p>High-risk or uncertain findings should be validated with appropriate endpoint, network, sandbox, malware-reputation, SIEM, EDR, or forensic tools when required by the investigation.</p>
+                </section>
+
+                <section>
+                    <h4>Privacy &amp; Secrets</h4>
+                    <p>Avoid submitting passwords, authentication tokens, API secrets, private keys, or other sensitive credentials. Submit only the evidence necessary for the security analysis.</p>
+                </section>
+
+                <section class="help-disclaimer">
+                    <h4>AI Disclaimer</h4>
+                    <p><strong>AI-generated analysis can make mistakes.</strong> Verify important security decisions. LUCID is a security-analysis assistant and its results should be considered alongside other available evidence and appropriate security tools.</p>
+                </section>
+
+            </div>
+
+            <div class="modal-actions">
+                <button id="help-close-btn" class="btn-primary-small">Got it</button>
+            </div>
+        </div>
     </div>
 
     <!-- Risk Edit Modal -->
     <div id="risk-modal" class="modal-overlay hidden">
         <div class="modal-content">
-            <h3>Edit Risk</h3>
+            <h3 id="risk-modal-title">Edit Risk</h3>
             <div class="modal-form">
                 <label>Description</label>
                 <input type="text" id="modal-risk-desc">
-                
+
                 <label>Category</label>
                 <input type="text" id="modal-risk-category">
-                
+
                 <label>Priority</label>
                 <select id="modal-risk-priority">
                     <option>Low</option>
@@ -227,10 +398,12 @@
                     <option>High</option>
                     <option>Critical</option>
                 </select>
-                
+
                 <label>Status</label>
                 <select id="modal-risk-status">
                     <option>Open</option>
+                    <option>In Progress</option>
+                    <option>Resolved</option>
                     <option>Mitigated</option>
                     <option>Closed</option>
                 </select>
@@ -242,6 +415,71 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+
+    <!-- Incident Details -->
+    <div id="incident-detail-modal" class="incident-modal" aria-hidden="true">
+        <div class="incident-modal-backdrop" data-close-incident-modal></div>
+
+        <section
+            class="incident-modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="incident-detail-title"
+        >
+            <div class="incident-modal-header">
+                <div>
+                    <div class="incident-modal-eyebrow">Security Incident</div>
+                    <h2 id="incident-detail-title">Incident Details</h2>
+                </div>
+
+                <button
+                    type="button"
+                    class="incident-modal-close"
+                    aria-label="Close incident details"
+                    data-close-incident-modal
+                >×</button>
+            </div>
+
+            <div id="incident-detail-content" class="incident-detail-content"></div>
+
+            <div class="incident-resolution-section">
+                <h3>Analyst Action / Resolution</h3>
+                <p class="incident-resolution-help">
+                    Record what was investigated and what action was taken before closing the incident.
+                </p>
+
+                <label for="incident-detail-notes">Action / Resolution Notes</label>
+                <textarea
+                    id="incident-detail-notes"
+                    maxlength="2000"
+                    placeholder="Example: Blocked the source IP, reset the affected account password, and reviewed authentication logs. No successful compromise was found."
+                ></textarea>
+
+                <div class="incident-resolution-controls">
+                    <div>
+                        <label for="incident-detail-status">Status</label>
+                        <select id="incident-detail-status">
+                            <option value="Open">Open</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Resolved">Resolved</option>
+                        </select>
+                    </div>
+
+                    <button type="button" id="incident-detail-save" class="incident-detail-save">
+                        Save Incident
+                    </button>
+                </div>
+
+                <div
+                    id="incident-detail-message"
+                    class="incident-detail-message"
+                    role="status"
+                    aria-live="polite"
+                ></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="script.js?v=20260909-incident-details"></script>
 </body>
 </html>

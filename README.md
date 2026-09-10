@@ -1,194 +1,177 @@
-<p align="center">
-  <img src="./public/assets/branding/lucid-icon-256.png" alt="LUCID Logo" width="80" height="80">
-</p>
+<div align="center">
+  <img src="public/assets/branding/lucid-icon-256.png" alt="LUCID Logo" width="88" height="88">
 
 # LUCID
 
-> **Clarity Through the Chaos.**<br>
-> *AI-powered security analysis for everyday users and security analysts.*
+### Clarity Through the Chaos.
 
-**Live Application:** [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
+**An AI-powered cybersecurity assistant that helps everyday users understand suspicious evidence while giving analysts structured technical intelligence.**
 
-**LUCID** is an enterprise-grade AI security analysis platform designed to transform complex, multi-vector threat signals into clear, actionable intelligence. It inspects untrusted text payloads and visual artifacts (such as phishing emails, smishing SMS, fake authentication portals, deceptive permission prompts, fraudulent popups, and malicious QR codes) using multimodal AI.
+**Production App:** https://lucid-dmhlvl2qqa-uc.a.run.app
+**Release:** Version 1.0 production build
+**Cloud Run Revision:** `lucid-00013-xwc`
 
-Built on a dual-persona architecture, LUCID delivers tailored experiences for both non-technical everyday users and seasoned SecOps analysts:
-- **ShieldMe (Everyday Mode):** Plain-English safety verdicts (`Safe`, `Suspicious`, `Dangerous`), actionable remediation steps, and private, session-scoped check history.
-- **TIQ (Threat Intelligence Query Mode):** Industry-standard threat taxonomy classification, multi-level severity scoring (`Low`, `Medium`, `High`, `Critical`), MITRE ATT&CK mapping, technical reasoning, attack progression chains, and an incident management dashboard.
+</div>
+
+---
+
+## What is LUCID?
+
+LUCID is an AI-powered security analysis application built to make confusing cybersecurity evidence easier to understand and act on. Users can submit suspicious messages, alerts, screenshots, logs, files, source code, or Wireshark-style network screenshots and receive a clear security assessment.
+
+LUCID supports two audiences from the same evidence. **ShieldMe** explains risk in plain language for everyday users, while **TIQ** provides analyst-focused classification, severity, MITRE ATT&CK context, indicators, reasoning, and recommended response actions.
+
+The goal is not to replace human judgment. LUCID helps reduce confusion, speed up triage, preserve evidence, and provide a safer first interpretation of suspicious security material.
 
 ---
 
 ## Key Features
 
-### 1. Dual-Persona Architecture
-- **ShieldMe Mode:**
-  - Designed for end-user reassurance and non-technical staff.
-  - Translates complex risk indicators into simple color-coded verdicts: **Safe**, **Suspicious**, or **Dangerous**.
-  - Delivers actionable, non-jargon guidance (e.g., *"Do not click the link"*, *"Verify sender domain"*).
-  - **My Checks Tab:** Automatically tracks session checks using an anonymous, cookie-free `sessionId` stored in local browser state.
-- **TIQ (Threat Intelligence Query) Mode:**
-  - Built for SOC analysts and incident response teams.
-  - Provides standardized threat taxonomy classification, attack vector analysis, severity rationale, and prioritized SOC actions.
-  - Unlocks the **SecOps Dashboard** with 7-day incident trends, 30-day automated pattern aggregation, and an interactive Risk Register.
+| Feature | Purpose |
+|---|---|
+| **ShieldMe** | Plain-language security guidance for everyday users. |
+| **TIQ** | Technical analyst mode with classification, severity, MITRE ATT&CK mapping, indicators, and SOC actions. |
+| **Multimodal Analysis** | Analyze text, screenshots, alerts, documents, logs, code, and network evidence. |
+| **File Analysis** | Safely extracts readable content from supported files without executing uploaded content. |
+| **Wireshark Screenshot Analysis** | Interprets network-capture screenshots such as scanning or beaconing patterns. |
+| **Incident Correlation** | Links the same evidence across ShieldMe and TIQ into one active incident when appropriate. |
+| **TIQ Dashboard** | Tracks incidents, severity, status, source, evidence, and analyst workflow. |
+| **Risk Register** | Helps analysts track and manage security risks. |
+| **My Checks** | Lets ShieldMe users view their recent personal analysis history. |
+| **Expanded Help** | In-app guidance covering modes, uploads, incident handling, limitations, and best practices. |
 
-### 2. Multimodal Threat Inspection
-- **Dual Payload Analysis:** Evaluates text alerts, uploaded screenshots, or both simultaneously.
-- **Visual Evasion Detection:** Identifies visual spoofing tactics including brand impersonation, URL bar mismatches, rogue mobile app permission popups, fake infection warnings, and malicious QR codes.
-- **Client & Server Image Pipeline:**
-  - *Client-side:* Downscales images (max 1600px edge), converts to WebP, and validates 8MB upload limits.
-  - *Server-side:* Uses `sharp` to strip EXIF metadata and re-encode clean WebP buffers before LLM inference.
+---
 
-### 3. Prompt Injection Defense & Privacy Architecture
-- **Untrusted Content Sandboxing:** Wraps user input in `<user_submitted_content>` tags with strict system instructions preventing jailbreak attempts or filter evasion.
-- **Visual Red-Flag Enforcement:** Instructs model to treat visual filter-evasion text embedded inside images as a severe security red flag.
-- **Privacy-Preserving Storage:** Raw user submissions are never persisted to the database. Only metadata (timestamp, mode, severity, verdict, truncated summary) is stored for verified threats.
+## Supported Evidence
 
-### 4. Authentication & Multi-Tenancy
-- **Google Sign-In:** Gated authentication using Firebase Client Auth SDK.
-- **Session-Scoped Authentication:** Firebase Auth uses browser session persistence. Refreshing the active LUCID page preserves authentication, while closing the LUCID tab ends the verified browser session and reopening LUCID requires Google Sign-In again. Explicit sign-out also terminates the session.
-- **Token Verification:** Express API routes verify Firebase ID tokens via `firebase-admin`.
-- **Tenant Scoping (`orgId`):** All incidents, risks, and dashboard queries are partitioned by the authenticated user's UID (`orgId`).
+LUCID can analyze several forms of supplied evidence:
+
+- Suspicious messages and emails
+- URLs and login/payment requests
+- Security alerts and SIEM-style alert text
+- Screenshots and images
+- Wireshark/network screenshots
+- PDF, DOCX, CSV, TXT, Markdown, log files, and source code
+
+Uploaded files are treated as data. LUCID extracts readable content where possible, applies validation and static checks, and sends safe analysis context to the AI pipeline. Uploaded content is **not executed**.
 
 ---
 
 ## Architecture Overview
 
-```
-                  ┌──────────────────────────────┐
-                  │    Browser UI (Vanilla JS)   │
-                  └──────────────┬───────────────┘
-                                 │ HTTP / JSON (Bearer ID Token)
-                                 v
-                  ┌──────────────────────────────┐
-                  │  Express.js API (server.js)  │
-                  └──────────────┬───────────────┘
-                                 │
-                                 v
-                  ┌──────────────────────────────┐
-                  │ lib/analyzeLucidContent.js   │
-                  └──────────────┬───────────────┘
-                                 │
-                                 v
-                  ┌──────────────────────────────┐
-                  │ Vertex AI (Gemini 2.5 Flash) │
-                  └──────────────────────────────┘
+```mermaid
+graph LR
+    A[User Browser] --> B[LUCID Frontend]
+    B --> C[Node.js Backend on Cloud Run]
+    C --> D[File/Image/Text Preprocessing]
+    D --> E[Vertex AI Gemini]
+    C --> F[Firestore]
+    B --> G[Firebase Authentication]
+    F --> H[Incidents, Risks, My Checks]
 ```
 
-> **Shared Analysis Engine**: Both production API endpoints (`server.js`) and automated benchmark runners (`scratch/`) consume the exact same production module ([`lib/analyzeLucidContent.js`](./lib/analyzeLucidContent.js)), guaranteeing 100% parity between evaluated benchmark accuracy and live production behavior.
-
----
-
-## Security Architecture
-
-- **Firebase ID Token Verification**: Protected backend endpoints require valid `Bearer <token>` headers.
-- **Server-Derived `orgId`**: Tenant scope (`orgId`) is derived server-side from `decodedToken.uid`, preventing client-side header spoofing.
-- **Firestore Security Rules**: Strict collection-level rules (`firestore.rules`) enforce `resource.data.orgId == request.auth.uid`.
-- **Rate Limiting**: `express-rate-limit` caps requests at 100 per 15-minute window per IP.
-- **Sanitization & Escaping**: All dynamic DOM outputs in the frontend are sanitized via `escapeHtml()`. CSV exports sanitize formula injection characters (`=`, `+`, `-`, `@`).
-
----
-
-## Accuracy & Benchmark Performance
-
-LUCID was evaluated across **74 test cases** in 3 independent benchmark suites using the shared production analyzer pipeline ([`lib/analyzeLucidContent.js`](./lib/analyzeLucidContent.js)) at `temperature: 0`:
-
-| Benchmark Suite | Case Count | Strict PASS | PARTIAL | FAIL | Strict PASS Rate |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Core Regression Suite** | 26 | 23 | 3 | 0 | **88.5%** |
-| **Generalization Suite (Unseen)** | 18 | 17 | 1 | 0 | **94.4%** |
-| **Adversarial Suite (Unseen)** | 30 | 27 | 3 | 0 | **90.0%** |
-| **Combined Benchmark Total** | **74** | **67** | **7** | **0** | **90.5%** |
-
-### Controlled Benchmark Validation Highlights:
-- **Exceeded Accuracy Target:** Achieved **90.5% combined strict PASS rate** (67/74 cases) in controlled benchmark validation, exceeding the 80.0% project target by **10.5 percentage points**.
-- **ShieldMe Verdict Reliability:** Achieved **100% benchmark PASS** (74/74 cases) across all Everyday Mode evaluations.
-- **Zero Failures:** 0 FAIL results across all 74 cases.
-- **Safety Metrics:** **0 False Positives** and **0 False Negatives** across the evaluation suites (0 malicious-to-safe regressions).
-- **Evidence-First PARTIAL Behavior:** All 7 PARTIAL cases (3 Core, 1 Generalization, 3 Adversarial) reflect LUCID's strict evidence-first policy (e.g. requiring confirmed loss for Critical BEC, or confirmed code execution output for Critical RCE), avoiding benchmark overfitting.
+At a high level, LUCID receives evidence from the browser, validates and preprocesses it on the backend, sends security-focused context to Gemini through Vertex AI, stores user-scoped analysis records in Firestore, and presents either ShieldMe or TIQ results depending on the selected mode.
 
 ---
 
 ## Technology Stack
 
-- **Frontend:** Vanilla HTML5, Vanilla JavaScript (ES6+), Vanilla CSS (Custom dark theme).
-- **Backend:** Node.js, Express.js.
-- **AI Engine:** Google Cloud Vertex AI (`gemini-2.5-flash`).
-- **Database:** Google Cloud Firestore (`@google-cloud/firestore`).
-- **Authentication:** Firebase Auth (`firebase-admin`).
-- **Image Processing:** `sharp` (WebP re-encoding & EXIF metadata stripping).
-- **Containerization & Cloud:** Cloud Run, Cloud Build, Docker.
+| Layer | Technology |
+|---|---|
+| Frontend | HTML, CSS, JavaScript single-page app |
+| Backend | Node.js / Express |
+| AI | Vertex AI Gemini |
+| Authentication | Firebase Authentication with Google Sign-In |
+| Database | Firestore |
+| Deployment | Google Cloud Run |
+| Build/Artifacts | Cloud Build and Artifact Registry |
+| File Processing | Multer, Sharp, pdf-parse, Mammoth, csv-parse |
 
 ---
 
-## Running Locally
+## Validation Summary
 
-### 1. Prerequisites
-- Node.js v18+
-- GCP Project with Vertex AI API & Firestore enabled
-- Authenticated Application Default Credentials (ADC):
-  ```bash
-  gcloud auth application-default login
-  ```
+| Evaluation Area | Final Result |
+|---|---:|
+| Primary benchmark: Core + Generalization + Adversarial | **68/74 strict PASS = 91.9%** |
+| ShieldMe primary benchmark | **74/74 successful outcomes** |
+| File pipeline smoke validation | **19/19 PASS** |
+| Extended file validation | **17/17 PASS** |
+| Wireshark screenshot validation | **16/16 PASS** |
 
-### 2. Installation & Execution
+The primary benchmark, file-pipeline validation, and Wireshark validation are reported separately to avoid overstating accuracy. Detailed methodology and case-level evidence are available in the Accuracy Report and Test Cases documents.
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) | Judge-friendly project story: problem, solution, uniqueness, use cases, impact, and future scope. |
+| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | Practical guide for using ShieldMe, TIQ, uploads, Dashboard, My Checks, Risk Register, and Help. |
+| [`docs/LUCID_Project_Technical_Handbook.pdf`](docs/LUCID_Project_Technical_Handbook.pdf) | Full technical handbook covering architecture, implementation, validation, security, deployment, and roadmap. |
+| [`docs/LUCID_ACCURACY_TEST_REPORT.md`](docs/LUCID_ACCURACY_TEST_REPORT.md) | Evaluation methodology, results, accuracy evolution, limitations, and interpretation. |
+| [`docs/LUCID_ACCURACY_TEST_CASES.md`](docs/LUCID_ACCURACY_TEST_CASES.md) | Complete case-level testing record for the benchmark and validation suites. |
+| [`RUNBOOK.md`](RUNBOOK.md) | Developer and operator instructions for setup, testing, deployment, and troubleshooting. |
+
+---
+
+## Quick Start
+
 ```bash
-# Install dependencies
 npm install
-
-# Start development server
 npm start
 ```
-App will start at `http://localhost:3000`.
 
----
+Then open the local application in a browser, sign in with Google, choose ShieldMe or TIQ, and submit evidence for analysis.
 
-## Testing & Static Validation
+For production, use the deployed Cloud Run application:
 
-### Syntax Validation
-```bash
-node --check lib/analyzeLucidContent.js
-node --check server.js
-node --check public/script.js
+```text
+https://lucid-dmhlvl2qqa-uc.a.run.app
 ```
 
-### Benchmark Evaluation (Requires GCP Credentials)
-```bash
-# Core Regression Suite
-node scratch/run_accuracy_suite.js && node scratch/evaluate_results.js
-
-# Generalization Suite
-node scratch/run_generalization_suite.js && node scratch/evaluate_generalization.js
-
-# Adversarial Suite
-node scratch/run_adversarial_suite.js && node scratch/evaluate_adversarial.js
-```
+Operational setup and deployment details are documented in [`RUNBOOK.md`](RUNBOOK.md).
 
 ---
 
-## Deployment (Cloud Run)
+## Future Roadmap
 
-LUCID is containerized for Google Cloud Run deployment:
-```bash
-gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/lucid-app
-gcloud run deploy lucid-app --image gcr.io/YOUR_PROJECT_ID/lucid-app --platform managed --region us-central1
-```
+LUCID is designed as a modular foundation for AI-assisted cybersecurity analysis. Planned enhancements include:
 
-Live deployment: [https://lucid-264271786605.us-central1.run.app/](https://lucid-264271786605.us-central1.run.app/)
-
----
-
-## Documentation Links
-
-- [**End-User Guide**](./docs/USER_GUIDE.md)
-- [**Technical System Handbook (PDF)**](./docs/LUCID_Project_Technical_Handbook.pdf)
-- [**Operations Runbook**](./RUNBOOK.md)
-- [**Accuracy & Validation Report**](./docs/LUCID_ACCURACY_TEST_REPORT.md)
-- [**Test Case Specification**](./docs/LUCID_ACCURACY_TEST_CASES.md)
+- Real-time threat intelligence enrichment for URLs, domains, IPs, and IOCs.
+- Expanded file support for email files, ZIP archives, Office macros, and additional forensic artifacts.
+- Enterprise SIEM/SOAR integrations such as Google SecOps, Splunk, Microsoft Sentinel, and QRadar.
+- Enhanced AI reasoning with better explainability, confidence calibration, and multimodal interpretation.
+- Cross-platform support through browser, email, mobile, and collaboration-tool integrations.
+- Continuous benchmarking using larger real-world datasets to improve robustness and generalization.
 
 ---
 
-## Limitations & Technical Considerations
+## Responsible Use
 
-1. **Decision Support:** LUCID provides automated threat intelligence to assist, not replace, qualified human security analyst judgment.
-2. **Evidence Dependency:** Classification and severity depend strictly on observable evidence in the alert payload.
-3. **Multimodal Parity:** Screenshot analysis requires legible visual threat indicators for optimal classification.
-4. **Planned SDK Maintenance:** The current Vertex AI SDK will be migrated to `@google/genai` in future releases.
+LUCID provides AI-assisted security interpretation based on the evidence supplied by the user. It does not guarantee that a message, file, system, or network is safe. Important security decisions should be verified using appropriate human review, logs, endpoint data, and organizational security procedures.
+
+---
+
+## Documentation Analysis — Final Validation
+
+LUCID now detects software and project documentation as benign content using
+content-only signals (Markdown headings, section keywords, and structural
+markers). No filename is used in detection.
+
+Markdown, HTML snippets, architecture text, deployment instructions, and
+security terminology found inside documentation files are not treated as
+malicious unless direct malicious behaviour is present in the content itself.
+Raw phishing and malware evidence detection is fully preserved.
+
+**Documentation/threat regression test: 19/19 PASS, 0 FAIL.**
+
+Final analyzer SHA-256:
+`009ad4427809bce6b8eaf9f932714587d7bb9e4f425a2d08684c06a18c2b5208`
+
+---
+
+## License
+
+This repository is prepared as a Version 1.0 production build. Add a license before broad public reuse if the repository is made public.

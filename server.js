@@ -5,9 +5,18 @@ const { Firestore } = require('@google-cloud/firestore');
 const { initializeApp, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const path = require('path');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const sharp = require('sharp');
+const multer = require('multer');
 const { analyzeLucidContent } = require('./lib/analyzeLucidContent');
+const { analyzeUploadedFile } = require('./lib/analyzeFileContent');
+
+// Memory storage for safe in-memory extraction (never execute or store raw uploads on disk)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
 const app = express();
 const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
@@ -67,11 +76,152 @@ const authMiddleware = async (req, res, next) => {
 
 // Analysis pipeline delegated to shared module (lib/analyzeLucidContent.js)
 
+
+// Create a deterministic fingerprint from the submitted evidence itself.
+// Used only for incident correlation; raw evidence is never stored here.
+function createEvidenceFingerprint({ text = '', imageBase64 = '', fileBuffer = null }) {
+    const hash = crypto.createHash('sha256');
+
+    if (fileBuffer) {
+        hash.update('file:');
+        hash.update(fileBuffer);
+    } else if (imageBase64) {
+        // Ignore a data-URL prefix so equivalent image payloads correlate.
+        const normalizedImage = String(imageBase64).replace(/^data:[^;]+;base64,/, '').replace(/\s+/g, '');
+        hash.update('image:');
+        hash.update(normalizedImage);
+        if (text && String(text).trim()) {
+            hash.update('|text:');
+            hash.update(String(text).trim().replace(/\s+/g, ' '));
+        }
+    } else {
+        hash.update('text:');
+        hash.update(String(text).trim().replace(/\s+/g, ' '));
+    }
+
+    return hash.digest('hex');
+}
+
+// Find an existing incident for exactly the same evidence.
+// Correlation is scoped to orgId so evidence can never correlate across tenants.
+async function findCorrelatedIncident(orgId, evidenceFingerprint) {
+    if (!evidenceFingerprint) return null;
+
+    /*
+     * Conservative incident correlation:
+     * - same tenant
+     * - exact same evidence fingerprint
+     * - only Open / In Progress incidents
+     * - only incidents created within the last 24 hours
+     *
+     * Resolved or older incidents are intentionally not reused.
+     */
+    const snapshot = await firestore.collection('incidents')
+        .where('orgId', '==', orgId)
+        .where('evidenceFingerprint', '==', evidenceFingerprint)
+        .get();
+
+    if (snapshot.empty) return null;
+
+    const cutoffMs = Date.now() - (24 * 60 * 60 * 1000);
+
+    let bestMatch = null;
+    let bestTimestampMs = 0;
+
+    for (const doc of snapshot.docs) {
+        const data = doc.data();
+
+        const status = data.status || 'Open';
+
+        if (!['Open', 'In Progress'].includes(status)) {
+            continue;
+        }
+
+        let timestampMs = 0;
+        const timestamp = data.timestamp;
+
+        if (timestamp) {
+            if (typeof timestamp.toMillis === 'function') {
+                timestampMs = timestamp.toMillis();
+            } else if (typeof timestamp.toDate === 'function') {
+                timestampMs = timestamp.toDate().getTime();
+            } else {
+                const parsed = new Date(timestamp).getTime();
+                timestampMs = Number.isFinite(parsed) ? parsed : 0;
+            }
+        }
+
+        if (!timestampMs || timestampMs < cutoffMs) {
+            continue;
+        }
+
+        // If duplicate candidates somehow exist, use the newest active one.
+        if (timestampMs > bestTimestampMs) {
+            bestTimestampMs = timestampMs;
+            bestMatch = {
+                id: doc.id,
+                ref: doc.ref,
+                data
+            };
+        }
+    }
+
+    return bestMatch;
+}
+
+function analysisSourceForMode(mode) {
+    return mode === 'analyst' ? 'TIQ' : 'ShieldMe';
+}
+
+function mergeAnalysisSources(existingSources, mode) {
+    const values = Array.isArray(existingSources) ? [...existingSources] : [];
+    const source = analysisSourceForMode(mode);
+    if (!values.includes(source)) values.push(source);
+    return values;
+}
+
+
+// Preserve analysis output required for incident review without storing
+// the user's raw submitted text, image, or file content.
+function buildIncidentAnalysisDetails(mode, result, inputType = 'text') {
+    if (!result || typeof result !== 'object') return {};
+
+    if (mode === 'everyday') {
+        return {
+            source: 'ShieldMe',
+            inputType,
+            verdict: result.verdict || null,
+            explanation: result.explanation || result.summary || null,
+            next_steps: Array.isArray(result.next_steps) ? result.next_steps : [],
+            malicious_content: result.malicious_content || null
+        };
+    }
+
+    return {
+        source: 'TIQ',
+        inputType,
+        verdict: result.verdict || null,
+        classification: result.classification || null,
+        severity: result.severity || null,
+        mitre_attack: Array.isArray(result.mitre_attack) ? result.mitre_attack : [],
+        key_indicators: Array.isArray(result.key_indicators) ? result.key_indicators : [],
+        technical_reasoning: result.technical_reasoning || result.reasoning || result.summary || null,
+        attack_chain: result.attack_chain || null,
+        why_severity: result.why_severity || null,
+        recommended_action: result.recommended_action || null,
+        soc_actions: Array.isArray(result.soc_actions) ? result.soc_actions : [],
+        confidence: result.confidence ?? null,
+        unknowns: Array.isArray(result.unknowns) ? result.unknowns : [],
+        malicious_content: result.malicious_content || null
+    };
+}
+
 // --- Analysis Endpoint ---
 app.post('/api/analyze', apiLimiter, authMiddleware, async (req, res) => {
     try {
         const { text, mode, imageBase64, sessionId } = req.body;
         const orgId = req.orgId;
+        const evidenceFingerprint = createEvidenceFingerprint({ text, imageBase64 });
 
         if (!text && !imageBase64) {
             return res.status(400).json({ error: 'Text or image is required' });
@@ -95,6 +245,136 @@ app.post('/api/analyze', apiLimiter, authMiddleware, async (req, res) => {
             throw analysisErr;
         }
 
+        // Evidence guard for multimodal network screenshots.
+        //
+        // Normalize visible SYN/port-scanning evidence to reconnaissance unless
+        // the screenshot/result contains stronger evidence of successful
+        // exploitation, compromise, or an established C2 channel.
+        //
+        // This is evidence-based and does not depend on any specific IP/domain.
+        if (
+            imageBase64 &&
+            mode === 'analyst' &&
+            parsedResult
+        ) {
+            const evidenceText = [
+                parsedResult.classification,
+                parsedResult.reasoning,
+                parsedResult.technical_reasoning,
+                parsedResult.why_severity,
+                parsedResult.attack_chain,
+                ...(Array.isArray(parsedResult.key_indicators)
+                    ? parsedResult.key_indicators
+                    : [])
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+
+            const hasScanningMitreEvidence =
+                Array.isArray(parsedResult.mitre_attack) &&
+                parsedResult.mitre_attack.some(id =>
+                    /^T1595(?:\.|$)/i.test(String(id))
+                );
+
+            const hasScanningEvidence =
+                /\b(port scan|port scanning|syn scan|active scanning|reconnaissance|multiple (?:ports|service ports)|scanning activity|different destination ports|various common ports)\b/i
+                    .test(evidenceText) ||
+                hasScanningMitreEvidence;
+
+            const hasEstablishedC2Evidence =
+                /\b(established (?:connection|session)|successful (?:connection|callback)|periodic beacon|beaconing|command channel established|persistent callback|successfully connected|confirmed command[- ]and[- ]control)\b/i
+                    .test(evidenceText);
+
+            const hasConfirmedExploitEvidence =
+                /\b(successful exploit|exploitation succeeded|remote shell|reverse shell established|payload executed|code execution confirmed|credentials compromised|account compromised|exfiltration confirmed)\b/i
+                    .test(evidenceText);
+
+            if (
+                hasScanningEvidence &&
+                !hasEstablishedC2Evidence &&
+                !hasConfirmedExploitEvidence
+            ) {
+                parsedResult.verdict = 'Suspicious';
+                parsedResult.classification = 'Active Scanning';
+                parsedResult.severity = 'Medium';
+                parsedResult.mitre_attack = ['T1595.002'];
+
+                parsedResult.reasoning =
+                    'The visible network evidence supports active scanning/reconnaissance. '
+                    + 'Repeated TCP SYN probes across multiple destination ports are consistent '
+                    + 'with a port scan. RST/ACK or other failed responses indicate probing rather '
+                    + 'than successful exploitation. Any failed or unresolved DNS/connection '
+                    + 'attempt shown in the screenshot is suspicious context, but by itself does '
+                    + 'not establish an active command-and-control channel.';
+
+                parsedResult.technical_reasoning = parsedResult.reasoning;
+
+                parsedResult.why_severity =
+                    'Medium severity because the visible evidence demonstrates active reconnaissance, '
+                    + 'but does not establish successful exploitation, host compromise, or '
+                    + 'command-and-control communication.';
+
+                parsedResult.attack_chain = 'Single-stage reconnaissance event';
+            }
+        }
+
+        // ShieldMe multimodal network evidence guard.
+        // Reconnaissance/port scanning without confirmed exploitation,
+        // compromise, or established C2 should remain SUSPICIOUS rather
+        // than being promoted to DANGEROUS.
+        if (
+            imageBase64 &&
+            mode === 'everyday' &&
+            parsedResult
+        ) {
+            const everydayEvidence = [
+                parsedResult.explanation,
+                parsedResult.reasoning,
+                ...(Array.isArray(parsedResult.next_steps)
+                    ? parsedResult.next_steps
+                    : [])
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+
+            const hasScanningEvidence =
+                /\b(port scan|port scanning|syn scan|reconnaissance|multiple (?:ports|service ports)|scanning activity|different destination ports|various common ports)\b/i
+                    .test(everydayEvidence);
+
+            const hasEstablishedC2Evidence =
+                /\b(established (?:connection|session)|successful (?:connection|callback)|periodic beacon|beaconing|command channel established|persistent callback|successfully connected|confirmed command[- ]and[- ]control)\b/i
+                    .test(everydayEvidence);
+
+            const hasConfirmedExploitEvidence =
+                /\b(successful exploit|exploitation succeeded|remote shell|reverse shell established|payload executed|code execution confirmed|credentials compromised|account compromised|data exfiltration|exfiltration confirmed)\b/i
+                    .test(everydayEvidence);
+
+            if (
+                hasScanningEvidence &&
+                !hasEstablishedC2Evidence &&
+                !hasConfirmedExploitEvidence
+            ) {
+                parsedResult.verdict = 'Suspicious';
+
+                parsedResult.explanation =
+                    'The visible network evidence shows active scanning/reconnaissance. '
+                    + 'A host is sending TCP SYN probes across multiple destination ports, '
+                    + 'which is consistent with a port scan. RST/ACK or other failed responses '
+                    + 'show probing rather than successful exploitation. Any failed or unresolved '
+                    + 'DNS/connection attempt is suspicious context, but does not by itself prove '
+                    + 'that the host is compromised or communicating with command-and-control infrastructure.';
+
+                parsedResult.next_steps = [
+                    'Investigate whether the scanning activity from the source host is authorized.',
+                    'Review firewall, IDS/IPS, and endpoint logs for related activity.',
+                    'Check the source host for unauthorized scanning tools or other suspicious processes.',
+                    'Escalate if later evidence shows successful exploitation, compromise, or established external communication.'
+                ];
+            }
+        }
+
         // Fire-and-forget Firestore incident logging with orgId scoping
         (async () => {
             try {
@@ -109,19 +389,67 @@ app.post('/api/analyze', apiLimiter, authMiddleware, async (req, res) => {
 
                 if (shouldCreateIncident) {
                     console.log(`[Firestore] Scoping incident creation to orgId: ${orgId}`);
-                    await firestore.collection('incidents').add({
-                        orgId: orgId,
-                        timestamp: new Date(),
-                        mode: mode,
-                        sessionId: sessionId || null,
-                        inputType: (text && imageBase64) ? 'both' : (imageBase64 ? 'image' : 'text'),
-                        inputSummary: text ? (text.substring(0, 100) + (text.length > 100 ? '...' : '')) : 'Image upload',
-                        verdictOrClassification: mode === 'everyday' ? parsedResult.verdict : parsedResult.classification,
-                        severity: mode === 'everyday' ? parsedResult.verdict : parsedResult.severity,
-                        explanation: mode === 'everyday' ? parsedResult.explanation : parsedResult.reasoning,
-                        status: 'Open',
-                        notes: ''
-                    });
+                    const correlated = await findCorrelatedIncident(orgId, evidenceFingerprint);
+                    const source = analysisSourceForMode(mode);
+
+                    if (correlated) {
+                        const existing = correlated.data;
+                        const analysisSources = mergeAnalysisSources(existing.analysisSources, mode);
+
+                        // TIQ carries the richer operational classification when available.
+                        const preferCurrent = mode === 'analyst' || existing.mode !== 'analyst';
+                        const updateData = {
+                            analysisSources,
+                            lastAnalyzedAt: new Date(),
+                            [`analyses.${source}`]: buildIncidentAnalysisDetails(
+                                mode,
+                                parsedResult,
+                                (text && imageBase64) ? 'both' : (imageBase64 ? 'image' : 'text')
+                            )
+                        };
+
+                        if (preferCurrent) {
+                            updateData.verdictOrClassification =
+                                mode === 'everyday' ? parsedResult.verdict : parsedResult.classification;
+                            updateData.severity =
+                                mode === 'everyday' ? parsedResult.verdict : parsedResult.severity;
+                            updateData.explanation =
+                                mode === 'everyday' ? parsedResult.explanation : parsedResult.reasoning;
+                        }
+
+                        if (mode === 'analyst') {
+                            updateData.mode = 'analyst';
+                        }
+
+                        await correlated.ref.update(updateData);
+                        console.log(`[Firestore] Correlated ${source} analysis with incident ${correlated.id}`);
+                    } else {
+                        const docRef = await firestore.collection('incidents').add({
+                            orgId: orgId,
+                            timestamp: new Date(),
+                            lastAnalyzedAt: new Date(),
+                            mode: mode,
+                            sessionId: sessionId || null,
+                            inputType: (text && imageBase64) ? 'both' : (imageBase64 ? 'image' : 'text'),
+                            inputSummary: text ? (text.substring(0, 100) + (text.length > 100 ? '...' : '')) : 'Image upload',
+                            verdictOrClassification: mode === 'everyday' ? parsedResult.verdict : parsedResult.classification,
+                            severity: mode === 'everyday' ? parsedResult.verdict : parsedResult.severity,
+                            explanation: mode === 'everyday' ? parsedResult.explanation : parsedResult.reasoning,
+                            evidenceFingerprint,
+                            analysisSources: [source],
+                            analyses: {
+                                [source]: buildIncidentAnalysisDetails(
+                                    mode,
+                                    parsedResult,
+                                    (text && imageBase64) ? 'both' : (imageBase64 ? 'image' : 'text')
+                                )
+                            },
+                            status: 'Open',
+                            notes: ''
+                        });
+
+                        await docRef.update({ incidentId: `INC-${docRef.id.slice(0, 8).toUpperCase()}` });
+                    }
                 }
             } catch (firestoreErr) {
                 console.error('[Lucid] Firestore incident logging failed (non-fatal):', firestoreErr.message || firestoreErr);
@@ -133,6 +461,127 @@ app.post('/api/analyze', apiLimiter, authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('[Lucid] Unexpected error in /api/analyze:', error.message || error);
         res.status(500).json({ error: 'Unable to verify — proceed with caution' });
+    }
+});
+
+// --- Universal File Analysis Endpoint (Checkpoint 2) ---
+app.post('/api/analyze-file', apiLimiter, authMiddleware, upload.single('file'), async (req, res) => {
+    try {
+        const file = req.file;
+        const mode = req.body.mode || 'everyday';
+        const sessionId = req.body.sessionId || null;
+        const orgId = req.orgId;
+
+        if (!file) {
+            return res.status(400).json({
+                verdict: 'INCONCLUSIVE',
+                malicious_content: 'inconclusive',
+                classification: 'No File Provided',
+                severity: 'Low',
+                summary: 'No file was uploaded.',
+                findings: []
+            });
+        }
+
+        const evidenceFingerprint = createEvidenceFingerprint({ fileBuffer: file.buffer });
+
+        // Run the universal file analysis pipeline
+        const fileResult = await analyzeUploadedFile(file, { mode });
+
+        // File-analysis MITRE normalization fallback.
+        // Preserve any mapping already produced by the analyzer.
+        if (
+            mode === 'analyst' &&
+            (!Array.isArray(fileResult.mitre_attack) || fileResult.mitre_attack.length === 0) &&
+            /password guessing|dictionary attack/i.test(String(fileResult.classification || ''))
+        ) {
+            fileResult.mitre_attack = ['T1110.001'];
+        }
+
+        // Fire-and-forget Firestore incident logging (metadata only - never store raw file content)
+        (async () => {
+            try {
+                const isDangerous = fileResult.verdict === 'DANGEROUS';
+                const isSuspicious = fileResult.verdict === 'SUSPICIOUS';
+                const isThreat = isDangerous || isSuspicious;
+
+                if (isThreat) {
+                    console.log(`[Firestore] Scoping file incident creation to orgId: ${orgId}`);
+                    const correlated = await findCorrelatedIncident(orgId, evidenceFingerprint);
+                    const source = analysisSourceForMode(mode);
+
+                    if (correlated) {
+                        const existing = correlated.data;
+                        const analysisSources = mergeAnalysisSources(existing.analysisSources, mode);
+                        const updateData = {
+                            analysisSources,
+                            lastAnalyzedAt: new Date(),
+                            [`analyses.${source}`]: buildIncidentAnalysisDetails(
+                                mode,
+                                fileResult,
+                                'file'
+                            )
+                        };
+
+                        // Prefer TIQ's richer classification/severity for the operational incident.
+                        if (mode === 'analyst' || existing.mode !== 'analyst') {
+                            updateData.verdictOrClassification = fileResult.classification;
+                            updateData.severity = fileResult.severity;
+                            updateData.explanation = fileResult.summary;
+                        }
+
+                        if (mode === 'analyst') {
+                            updateData.mode = 'analyst';
+                        }
+
+                        await correlated.ref.update(updateData);
+                        console.log(`[Firestore] Correlated ${source} file analysis with incident ${correlated.id}`);
+                    } else {
+                        const docRef = await firestore.collection('incidents').add({
+                            orgId: orgId,
+                            timestamp: new Date(),
+                            lastAnalyzedAt: new Date(),
+                            mode: mode,
+                            sessionId: sessionId,
+                            inputType: 'file',
+                            inputSummary: `File: ${fileResult.file_name} (${fileResult.file_type})`,
+                            verdictOrClassification: fileResult.classification,
+                            severity: fileResult.severity,
+                            explanation: fileResult.summary,
+                            evidenceFingerprint,
+                            analysisSources: [source],
+                            analyses: {
+                                [source]: buildIncidentAnalysisDetails(
+                                    mode,
+                                    fileResult,
+                                    'file'
+                                )
+                            },
+                            status: 'Open',
+                            notes: '',
+                            analysisMetadata: `Verdict: ${fileResult.verdict}, Malicious Content: ${fileResult.malicious_content}`
+                        });
+
+                        await docRef.update({ incidentId: `INC-${docRef.id.slice(0, 8).toUpperCase()}` });
+                    }
+                }
+            } catch (firestoreErr) {
+                console.error('[Lucid] Firestore file incident logging failed (non-fatal):', firestoreErr.message || firestoreErr);
+            }
+        })();
+
+        res.json(fileResult);
+
+    } catch (error) {
+        console.error('[Lucid] Unexpected error in /api/analyze-file:', error.message || error);
+        res.status(500).json({
+            verdict: 'INCONCLUSIVE',
+            malicious_content: 'inconclusive',
+            classification: 'Analysis System Error',
+            severity: 'Low',
+            summary: 'An unexpected error occurred during file analysis.',
+            findings: []
+        });
     }
 });
 
@@ -164,18 +613,26 @@ app.get('/api/my-checks', apiLimiter, authMiddleware, async (req, res) => {
         const sessionId = req.query.sessionId;
         console.log(`[Firestore] Scoping my-checks query to orgId: ${orgId}, sessionId: ${sessionId || 'any'}`);
         
+        // Read the user's incident records and derive ShieldMe history from
+        // analysisSources. Legacy records without analysisSources remain supported.
         let query = firestore.collection('incidents')
             .where('orgId', '==', orgId)
-            .where('mode', '==', 'everyday');
-            
-        if (sessionId) {
-            query = query.where('sessionId', '==', sessionId);
-        }
-        query = query.orderBy('timestamp', 'desc');
+            .orderBy('timestamp', 'desc');
 
         const snapshot = await query.get();
         const checks = [];
-        snapshot.forEach(doc => checks.push({ id: doc.id, ...doc.data() }));
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const sources = Array.isArray(data.analysisSources) ? data.analysisSources : [];
+            const hasShieldMe = sources.includes('ShieldMe') || data.mode === 'everyday';
+
+            if (!hasShieldMe) return;
+            if (sessionId && data.sessionId !== sessionId) return;
+
+            checks.push({ id: doc.id, ...data });
+        });
+
         res.json(checks);
     } catch (err) {
         console.error('[Lucid] Failed to fetch my checks:', err);
@@ -198,13 +655,54 @@ app.patch('/api/incidents/:id', apiLimiter, authMiddleware, async (req, res) => 
             return res.status(403).json({ error: 'Forbidden: You do not own this incident' });
         }
         
-        const ALLOWED_UPDATE_FIELDS = ['status', 'notes'];
         const updateData = {};
-        for (const field of ALLOWED_UPDATE_FIELDS) {
-            if (req.body[field] !== undefined) updateData[field] = req.body[field];
+
+        if (req.body.status !== undefined) {
+            const allowedStatuses = ['Open', 'In Progress', 'Resolved'];
+
+            if (!allowedStatuses.includes(req.body.status)) {
+                return res.status(400).json({ error: 'Invalid incident status' });
+            }
+
+            updateData.status = req.body.status;
         }
+
+        if (req.body.notes !== undefined) {
+            if (typeof req.body.notes !== 'string') {
+                return res.status(400).json({ error: 'Incident notes must be text' });
+            }
+
+            const notes = req.body.notes.trim();
+
+            if (notes.length > 2000) {
+                return res.status(400).json({
+                    error: 'Incident notes must be 2000 characters or fewer'
+                });
+            }
+
+            updateData.notes = notes;
+        }
+
         if (Object.keys(updateData).length === 0) {
             return res.status(400).json({ error: 'No valid fields to update' });
+        }
+
+        // A security incident cannot be resolved without documenting
+        // the investigation/action taken.
+        if (updateData.status === 'Resolved') {
+            const existingNotes = typeof doc.data().notes === 'string'
+                ? doc.data().notes.trim()
+                : '';
+
+            const finalNotes = updateData.notes !== undefined
+                ? updateData.notes
+                : existingNotes;
+
+            if (!finalNotes) {
+                return res.status(400).json({
+                    error: 'Add analyst action or resolution notes before resolving this incident'
+                });
+            }
         }
         
         await docRef.update(updateData);

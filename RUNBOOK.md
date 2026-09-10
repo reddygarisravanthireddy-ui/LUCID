@@ -1,206 +1,631 @@
-# LUCID — System Architecture & Operations Runbook
+<p align="center">
+  <img src="./public/assets/branding/lucid-icon-256.png" alt="LUCID Logo" width="72" height="72">
+</p>
 
-## 1. Executive Summary & Platform Overview
+# LUCID
 
-**LUCID** is an AI-powered security threat analysis and threat intelligence platform designed to inspect suspicious communications (phishing emails, smishing SMS, fake login portals, malicious QR codes, and rogue system warnings).
-
-The platform features a **Dual-Persona Experience**:
-- **ShieldMe (Everyday Mode):** Plain-English safety verdicts (`Safe`, `Suspicious`, `Dangerous`), actionable next steps, and a private, session-scoped history log (*My Checks*).
-- **TIQ (Analyst Mode):** Technical taxonomy, severity scoring (`Low`, `Medium`, `High`, `Critical`), MITRE-aligned reasoning, recommended remediation actions, and a full **SecOps Dashboard** (incidents, trends, pattern detection, and risk register).
+<p align="center">
+  <strong>Clarity Through the Chaos.</strong><br>
+  <strong>RUNBOOK</strong><br>
+  <em>Operations & Deployment</em><br><br>
+  <strong>Version 1.0</strong><br>
+  September 2026<br><br>
+  <strong>LUCID Documentation Suite</strong>
+</p>
 
 ---
 
-## 2. End-to-End User Input Lifecycle
+## Document Information
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Browser as Client (Browser / script.js)
-    participant Sharp as Client Canvas / Server Sharp
-    participant Server as Express Backend (server.js)
-    participant Auth as Firebase Auth / Admin SDK
-    participant Gemini as Vertex AI (Gemini 2.5 Flash)
-    participant DB as Google Cloud Firestore
+### Purpose
 
-    User->>Browser: Enters text / drops screenshot & clicks "Check This"
-    Note over Browser: Client-side validation & Image pre-processing
-    Browser->>Sharp: Downscale image (max 1600px) & convert to WebP (0.8 quality)
-    Browser->>Auth: Retrieve current user Firebase ID Token (JWT)
-    Browser->>Server: POST /api/analyze (Bearer Token, text, imageBase64, mode, sessionId)
-    
-    Note over Server: Route Protection & Authentication
-    Server->>Auth: getAuth().verifyIdToken(token)
-    Auth-->>Server: Decoded Token (uid, email) -> Attach req.orgId = uid
+This runbook explains how to operate, deploy, verify, and troubleshoot LUCID. It is intended for developers or maintainers who need to run the application locally, validate the production deployment, understand required Google Cloud and Firebase configuration, and perform safe release checks without changing the frozen security-analysis logic.
 
-    Note over Server: Shared Analyzer Pipeline
-    Server->>Sharp: Strip EXIF metadata & re-encode image buffer
-    Server->>Server: analyzeLucidContent({ text, mode, imageBase64 })
+### Intended Audience
 
-    Server->>Gemini: generateContent({ model: "gemini-2.5-flash", parts, responseMimeType: "application/json" })
-    Gemini-->>Server: JSON Analysis (verdict / classification, explanation, next steps)
+- Project maintainer
+- Developer/operator
+- Technical reviewer
+- Cloud deployment reviewer
 
-    par Async Fire-and-Forget Persistence (Non-Blocking)
-        Server-)DB: Write incident if threat detected (scoped with orgId: req.orgId)
-    and Synchronous Response
-        Server-->>Browser: HTTP 200 JSON Analysis Result
-    end
+### Related Documents
 
-    Note over Browser: Render Results
-    alt ShieldMe Mode
-        Browser->>User: Display color-coded verdict banner + plain-English guidance
-    else TIQ Mode
-        Browser->>User: Display technical classification + severity badge + remediation steps
-    end
+- [`README.md`](./README.md)
+- [`docs/PROJECT_OVERVIEW.md`](./docs/PROJECT_OVERVIEW.md)
+- [`docs/USER_GUIDE.md`](./docs/USER_GUIDE.md)
+- [`docs/LUCID_Project_Technical_Handbook.pdf`](./docs/LUCID_Project_Technical_Handbook.pdf)
+- [`docs/LUCID_ACCURACY_TEST_REPORT.md`](./docs/LUCID_ACCURACY_TEST_REPORT.md)
+- [`docs/LUCID_ACCURACY_TEST_CASES.md`](./docs/LUCID_ACCURACY_TEST_CASES.md)
+
+### Table of Contents
+
+1. Operating Principles
+2. Production Environment
+3. Local Development Setup
+4. Google Cloud Configuration
+5. Firebase Configuration
+6. Application Startup
+7. Validation Commands
+8. Deployment Workflow
+9. Production Verification Checklist
+10. Documentation Synchronization
+11. Known Operational Behavior
+12. Troubleshooting
+13. Release Safety Rules
+14. Technical Debt
+15. Final Cleanup Checklist
+
+---
+
+## 1. Operating Principles
+
+LUCID is a cloud-native AI cybersecurity assistant with two user-facing modes: ShieldMe for plain-language security guidance and TIQ for analyst-grade threat intelligence. Operational work should preserve the distinction between application behavior, AI/security-analysis logic, validation evidence, and documentation.
+
+The most important operational rule is that the validated analyzer is frozen unless a deliberate regression cycle is started. Documentation, assets, and release packaging may be updated, but security-analysis changes must not be made casually.
+
+### Frozen Analyzer
+
+```text
+lib/analyzeLucidContent.js
 ```
 
-### Detailed Step-by-Step Flow
+Authoritative SHA-256:
 
-#### Step 1: Input Submission & Client-Side Pre-processing
-1. **User Action:** The user pastes text into `#suspicious-text` and/or drops a screenshot into `#upload-area`.
-2. **Client Validation:** Verifies that text or an image is present; enforces 8MB file upload cap and validates MIME types (`image/png`, `image/jpeg`, `image/webp`).
-3. **Client Image Downscaling:** Downscales images exceeding 1600px edge dimensions while maintaining aspect ratio, converting to WebP (`quality: 0.8`) Base64.
-
-#### Step 2: Authentication & Token Injection
-1. **Session Persistence:** Before Google Sign-In, the client configures Firebase Auth with `firebase.auth.Auth.Persistence.SESSION`. Authentication survives page refreshes within the active browser session but does not use persistent local authentication across newly opened LUCID sessions.
-2. Client invokes `fetchWithAuth('/api/analyze', ...)`:
-   - Retrieves fresh Firebase ID Token via `auth.currentUser.getIdToken()`.
-   - Injects header `Authorization: Bearer <idToken>`.
-
-#### Step 3: Backend Authentication Middleware
-1. **Header Validation:** Express intercepts the request via `authMiddleware`.
-2. **Token Verification:** Calls `getAuth().verifyIdToken(token)` against Google public certificates.
-3. **Multi-Tenant Scoping:** Assigns `req.orgId = decodedToken.uid`.
-
-#### Step 4: Server-Side Processing & Shared Analyzer Execution
-1. **EXIF Stripping:** Server receives Base64 image and passes buffer to `sharp` to strip all EXIF/GPS/device metadata.
-2. **Shared Analyzer Pipeline:** Delegates analysis to `analyzeLucidContent({ text, mode, imageBase64 })` in `lib/analyzeLucidContent.js`.
-3. **Prompt Injection Defense:** User payload is encapsulated within `<user_submitted_content>` tags with strict system instructions preventing jailbreaks.
-
-#### Step 5: Gemini 2.5 Flash Inference & Deterministic Correction
-1. Request dispatched to Vertex AI (`gemini-2.5-flash` in `us-central1`).
-2. Gemini evaluates linguistic, contextual, and visual signals.
-3. Output is validated against JSON schema and passed through `applyEvidenceConsistency` for deterministic taxonomy/precedence rules.
-
-#### Step 6: Isolated Firestore Incident Persistence (Non-Blocking)
-1. If a threat is detected (`Suspicious`/`Dangerous` in ShieldMe, or `Medium`/`High`/`Critical` in TIQ), an incident record is logged to Firestore asynchronously.
-
-#### My Checks History & Persistence Behavior
-ShieldMe history is intentionally threat-focused. Analyses classified as Suspicious or Dangerous may be persisted to incident history. Safe analyses are returned normally to the user but are not stored in My Checks History. This keeps the history focused on checks that may require attention.
-
-#### Step 7: Client Result Presentation
-1. Renders results dynamically with XSS protection via `escapeHtml()`.
-2. Both ShieldMe and TIQ result views display a subtle inline disclaimer: *"AI-generated analysis can make mistakes. Verify important security decisions."*
-
----
-
-## 3. Architecture & Multi-Tenancy Design
-
-```
-+-------------------------------------------------------------------------+
-|                               Client UI                                 |
-| (Vanilla HTML5, ES6+, CSS Glassmorphism, Firebase Auth Client SDK)      |
-+------------------------------------+------------------------------------+
-                                     |
-                         HTTPS Bearer JWT Token
-                                     |
-+------------------------------------v------------------------------------+
-|                         Node.js / Express Server                        |
-|                                                                         |
-|  +---------------------+  +--------------------+  +------------------+  |
-|  |   Rate Limiter      |  |  authMiddleware    |  |  sharp Pipeline  |  |
-|  |  (100 req/15 min)   |  | (Firebase Admin)   |  | (EXIF Stripping) |  |
-|  +---------------------+  +--------------------+  +------------------+  |
-+-------------------+------------------------------------+----------------+
-                    |                                    |
-          Shared Analyzer Module               Scoped DB Queries
-                    |                                    |
-+-------------------v---------------+  +-----------------v----------------+
-|      Google Vertex AI             |  |     Google Cloud Firestore       |
-|  (gemini-2.5-flash @ us-central1) |  |      (Multi-Tenant Collections)  |
-+-----------------------------------+  +----------------------------------+
+```text
+148aa252fd1279fb6591087b860c0322512e846c8d6ef353904058f6e5bb3c25
 ```
 
-### Multi-Tenancy Data Scoping
-- **Single-User-per-Org Pattern:** Each authenticated user UID functions as an isolated `orgId`.
-- **Database Partitioning:** All `incidents` and `risks` documents store an `orgId` field.
-- **Strict Endpoint Scoping:** All queries filter by `.where('orgId', '==', req.orgId)`. `PATCH` and `DELETE` handlers verify `doc.data().orgId === req.orgId`.
-- **Firestore Security Rules:** `firestore.rules` enforces `request.auth.uid == resource.data.orgId` directly.
+Before a final release, verify the hash:
 
----
-
-## 4. Environment Variables & Production Config
-
-| Variable | Purpose | Default / Production Value |
-|---|---|---|
-| `PORT` | HTTP server port | `3000` (Cloud Run sets `8080`) |
-| `FRONTEND_ORIGIN` | CORS allowed origin | `http://localhost:3000` (Set to prod domain) |
-| `GOOGLE_CLOUD_PROJECT` | GCP Project ID | `project-c48afffb-501b-4711-a6d` |
-| `GCLOUD_PROJECT` | Fallback GCP Project ID | `project-c48afffb-501b-4711-a6d` |
-
----
-
-## 5. Operations & Health Checks
-
-### Starting / Restarting the Application
 ```bash
-# Start dev server
+shasum -a 256 lib/analyzeLucidContent.js
+```
+
+If this hash changes unexpectedly, stop and inspect the change before continuing.
+
+---
+
+## 2. Production Environment
+
+### Canonical Production Application
+
+```text
+https://lucid-dmhlvl2qqa-uc.a.run.app
+```
+
+### Current Validated Cloud Run Revision
+
+```text
+lucid-00013-xwc
+```
+
+### Google Cloud Project
+
+```text
+project-c48afffb-501b-4711-a6d
+```
+
+### Region
+
+```text
+us-central1
+```
+
+### Runtime Summary
+
+| Layer | Technology |
+|---|---|
+| Frontend | HTML, CSS, JavaScript single-page app |
+| Backend | Node.js / Express |
+| AI | Vertex AI Gemini 2.5 Flash |
+| Authentication | Firebase Authentication with Google Sign-In |
+| Database | Firestore |
+| Deployment | Cloud Run |
+| Build | Cloud Build |
+| Container Artifact | Artifact Registry |
+| Image/File Processing | Sharp, multer, pdf-parse, mammoth, csv-parse |
+
+---
+
+## 3. Local Development Setup
+
+### Prerequisites
+
+Install or confirm:
+
+- Node.js 18+
+- npm
+- Google Cloud CLI
+- Firebase project configuration
+- Application Default Credentials for Google Cloud access
+
+### Install Dependencies
+
+From the project root:
+
+```bash
+npm install
+```
+
+### Authenticate Google Cloud ADC
+
+Vertex AI access depends on Application Default Credentials.
+
+```bash
+gcloud auth application-default login
+```
+
+Confirm the active project:
+
+```bash
+gcloud config list
+```
+
+If the project is not correct:
+
+```bash
+gcloud config set project project-c48afffb-501b-4711-a6d
+```
+
+---
+
+## 4. Google Cloud Configuration
+
+LUCID uses Google Cloud for AI inference, deployment, artifact storage, and application hosting.
+
+### Required Services
+
+| Service | Purpose |
+|---|---|
+| Cloud Run | Hosts the Node.js application |
+| Vertex AI | Provides Gemini model access |
+| Firestore | Stores incidents, risks, and analysis metadata |
+| Cloud Build | Builds container images |
+| Artifact Registry | Stores built container artifacts |
+| IAM / ADC | Provides authenticated server access to Google Cloud APIs |
+
+### Operational Notes
+
+- Vertex AI calls are made in `us-central1`.
+- Gemini model used by the application is `gemini-2.5-flash`.
+- API keys are not used for Gemini access in this project; Application Default Credentials are required.
+- Cloud Run deploys the containerized Express application.
+
+---
+
+## 5. Firebase Configuration
+
+LUCID uses Firebase Authentication for Google Sign-In and Firebase Admin verification on the backend.
+
+### Required Firebase Settings
+
+1. Enable Firebase Authentication.
+2. Enable Google Sign-In provider.
+3. Add authorized domains for local and production use.
+4. Deploy Firestore rules.
+5. Ensure authenticated users have isolated Firestore access.
+
+### Production Authorized Domain
+
+The production domain must be allowed in Firebase Authentication settings:
+
+```text
+lucid-dmhlvl2qqa-uc.a.run.app
+```
+
+If sign-in fails in production with an unauthorized-domain style error, add the domain in Firebase Console:
+
+```text
+Firebase Console → Authentication → Settings → Authorized domains
+```
+
+No redeploy is required after adding the authorized domain.
+
+### Firestore Rules Deployment
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+### Firestore Indexes Deployment
+
+```bash
+firebase deploy --only firestore:indexes
+```
+
+---
+
+## 6. Application Startup
+
+### Start Locally
+
+```bash
 npm start
 ```
 
-### Static Validation Checks
+The local server normally runs at:
+
+```text
+http://localhost:3000
+```
+
+### Basic Local Page Check
+
+Open the browser at:
+
+```text
+http://localhost:3000
+```
+
+Expected result:
+
+- LUCID loads.
+- Sign-in button appears if not authenticated.
+- ShieldMe and TIQ modes are available after sign-in.
+
+---
+
+## 7. Validation Commands
+
+### Syntax Checks
+
+Run these before any release:
+
 ```bash
-# Validate JS syntax
-node --check lib/analyzeLucidContent.js
 node --check server.js
 node --check public/script.js
+node --check lib/analyzeLucidContent.js
+node --check lib/analyzeFileContent.js
+```
 
-# Check for trailing whitespace & formatting
+### Analyzer Hash Check
+
+```bash
+shasum -a 256 lib/analyzeLucidContent.js
+```
+
+Expected hash:
+
+```text
+148aa252fd1279fb6591087b860c0322512e846c8d6ef353904058f6e5bb3c25
+```
+
+### Whitespace Check
+
+```bash
 git diff --check
+```
 
-# Verify zero benchmark IDs in production
+This should produce no output.
+
+### Benchmark ID Leakage Check
+
+Production code must not contain benchmark-specific IDs or answer lookup logic.
+
+```bash
 grep -rn "TC-\|GEN-\|ADV-" lib/ server.js
 ```
 
-### Benchmark Evaluation Commands
-*(Note: Benchmark scripts execute against Vertex AI and require GCP credentials)*
+Expected result:
+
+- No benchmark ID references in production analyzer or server logic.
+- Benchmark cases should remain in test scripts and documentation, not production decision logic.
+
+---
+
+## 8. Benchmark and Validation Commands
+
+These commands require Google Cloud credentials and will call Vertex AI.
+
+### Core Regression Suite
+
 ```bash
-# Core 26-case suite
-node scratch/run_accuracy_suite.js && node scratch/evaluate_results.js
-
-# Generalization 18-case unseen suite
-node scratch/run_generalization_suite.js && node scratch/evaluate_generalization.js
-
-# Adversarial 30-case unseen suite
-node scratch/run_adversarial_suite.js && node scratch/evaluate_adversarial.js
+node scratch/run_accuracy_suite.js
+node scratch/evaluate_results.js
 ```
 
+### Generalization Suite
+
+```bash
+node scratch/run_generalization_suite.js
+node scratch/evaluate_generalization.js
+```
+
+### Adversarial Suite
+
+```bash
+node scratch/run_adversarial_suite.js
+node scratch/evaluate_adversarial.js
+```
+
+### File Pipeline Smoke Test
+
+```bash
+node scratch/test_file_pipeline.js
+```
+
+### Expected Current Validation Summary
+
+| Validation Area | Current Result |
+|---|---:|
+| Primary benchmark: Core + Generalization + Adversarial | 68/74 strict PASS = 91.9% |
+| ShieldMe primary benchmark | 74/74 successful outcomes |
+| File pipeline smoke validation | 19/19 PASS |
+| Extended file validation | 17/17 PASS |
+| Wireshark screenshot validation | 16/16 PASS |
+
+The file-pipeline, extended-file, and Wireshark validations are separate evidence streams and should not be added to the 74-case primary benchmark as if they were one combined accuracy score.
+
 ---
 
-## 6. Current Benchmark Status
+## 9. Deployment Workflow
 
-- **Core Suite (26 cases):** 23 PASS (88.5%), 3 PARTIAL (11.5%), 0 FAIL. ShieldMe 26/26 (100%).
-- **Generalization Suite (18 cases):** 17 PASS (94.4%), 1 PARTIAL (5.6%), 0 FAIL. ShieldMe 18/18 (100%), 0 FP, 0 FN.
-- **Adversarial Suite (30 cases):** 27 PASS (90.0%), 3 PARTIAL (10.0%), 0 FAIL. ShieldMe 30/30 (100%), 0 FP, 0 FN.
-- **Combined Benchmark (74 cases):** **67 PASS (90.5%)**, 7 PARTIAL (9.5%), 0 FAIL. ShieldMe **74/74 (100%)**.
+### Pre-Deployment Checklist
+
+Before deploying:
+
+- Confirm application logic changes are intentional.
+- Confirm frozen analyzer hash if no AI/security changes are expected.
+- Run syntax checks.
+- Run `git diff --check`.
+- Review `git status --short`.
+- Verify documentation links and production URL references.
+- Confirm the production URL is the canonical URL.
+
+### Build and Deploy
+
+Typical Cloud Run deployment flow:
+
+```bash
+gcloud builds submit --tag us-central1-docker.pkg.dev/project-c48afffb-501b-4711-a6d/lucid/lucid
+
+gcloud run deploy lucid \
+  --image us-central1-docker.pkg.dev/project-c48afffb-501b-4711-a6d/lucid/lucid \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+The exact Artifact Registry repository/image path may vary depending on current Google Cloud configuration. Confirm the active project and Artifact Registry path before running deployment commands.
+
+### Confirm Cloud Run Service
+
+```bash
+gcloud run services describe lucid --region us-central1
+```
+
+Verify:
+
+- Service name: `lucid`
+- Region: `us-central1`
+- URL: `https://lucid-dmhlvl2qqa-uc.a.run.app`
+- Latest revision matches the intended release
 
 ---
 
-## 7. Known Technical Debt
+## 10. Production Verification Checklist
 
-- **SDK Migration:** `@google-cloud/vertexai` SDK outputs a deprecation notice scheduled for removal June 24, 2026. Future refactoring will migrate to `@google/genai`.
+After deployment, verify the live application instead of assuming deployment success.
+
+### Browser Checks
+
+1. Open the production URL.
+2. Confirm the app loads.
+3. Sign in with Google.
+4. Run a ShieldMe analysis.
+5. Run a TIQ analysis with the same evidence.
+6. Confirm correlated incident behavior in the TIQ Dashboard.
+7. Open the incident details modal.
+8. Add analyst notes and change status.
+9. Verify file upload analysis.
+10. Verify Wireshark screenshot analysis.
+11. Open Help and confirm expanded topics are present.
+
+### Expected Production Behaviors
+
+- Sign-in works after Firebase authorized-domain configuration.
+- ShieldMe displays plain-language verdict and next steps.
+- TIQ displays classification, severity, key indicators, reasoning, MITRE mapping, and SOC actions.
+- Same evidence analyzed in ShieldMe and TIQ can correlate into one active incident.
+- Resolved incidents are not reused for new analysis.
+- File analysis displays the file safety limitation.
+- Wireshark scan-only evidence is not over-escalated to confirmed compromise or C2.
 
 ---
 
-## 8. Version History & Changelog
+## 11. Documentation Synchronization
 
-- **v1.0.0 — Initial Release:** Single-page AI threat analyzer for text and images with Vertex AI.
-- **v1.1.0 — SecOps Dashboard:** Added incidents table, 7-day volume trends, 30-day pattern aggregator, and CSV export.
-- **v1.2.0 — Dual-Persona Separation:** Added ShieldMe mode with *My Checks* session history and restricted technical dashboard to TIQ mode.
-- **v1.3.0 — UI Polishing:** Added compact three-dot dropdown menu, edit modal, and status workflows (`Open`, `In Progress`, `Resolved`).
-- **v1.4.0 — Multi-Tenant Architecture:** Integrated Firebase Authentication (Google Sign-In), route protection middleware (`authMiddleware`), multi-tenant data scoping (`orgId`), and updated composite indexes.
-- **v1.5.0 — Dashboard Filters & Incident Aging:** Added TIQ Dashboard quick-filters and "Days Open" aging indicator.
-- **v1.6.0 — Formal Accuracy Test Suite:** Executed initial 26-case accuracy benchmark.
-- **v1.7.0 — Multi-Suite Accuracy & Generalization Optimization:** Expanded benchmark coverage across Core, Generalization, and Adversarial suites.
-- **v2.0.0 — Shared Production Architecture & 91.9% Pre-Fix Benchmark:** Refactored benchmark runners to execute through the shared production analyzer module (`lib/analyzeLucidContent.js`).
-- **v2.1.0 — Multimodal Temporal Hardening & Final Release Benchmark:** Applied targeted temporal reasoning fix to prevent false-positive login anomaly classifications from valid notification timestamps. Achieved **90.5% combined strict PASS rate** (67/74 cases) in controlled benchmark validation, **100% ShieldMe PASS** (74/74 cases), **0 False Positives**, **0 False Negatives**, and 0 FAIL results.
+LUCID keeps canonical documentation in `docs/` and deployed-app documentation in `public/docs/`.
+
+### Canonical Documentation
+
+```text
+docs/USER_GUIDE.md
+docs/LUCID_ACCURACY_TEST_REPORT.md
+docs/LUCID_ACCURACY_TEST_CASES.md
+```
+
+### Deployed-App Documentation Copies
+
+```text
+public/docs/USER_GUIDE.md
+public/docs/LUCID_ACCURACY_TEST_REPORT.md
+public/docs/LUCID_ACCURACY_TEST_CASES.md
+```
+
+Whenever one of these canonical docs changes, copy the same updated content into the matching `public/docs/` file.
+
+### User Guide Image Assets
+
+GitHub/repository docs:
+
+```text
+docs/assets/user-guide/
+```
+
+Deployed app docs:
+
+```text
+public/docs/assets/user-guide/
+```
+
+Both should contain the same User Guide figure files.
+
+---
+
+## 12. Known Operational Behavior
+
+### No `/health` Endpoint
+
+LUCID currently does not expose a `/health` route.
+
+This command:
+
+```bash
+curl https://lucid-dmhlvl2qqa-uc.a.run.app/health
+```
+
+may return:
+
+```text
+Cannot GET /health
+```
+
+That is expected unless a health endpoint is intentionally added later.
+
+Use the root route and production UI behavior for basic smoke verification.
+
+### Vertex AI SDK Deprecation Warning
+
+The current `@google-cloud/vertexai` SDK path may emit a deprecation warning indicating removal in 2026 and recommending migration to `@google/genai`.
+
+This is tracked as technical debt. Do not migrate during documentation finalization. A future SDK migration should be treated as an application change and followed by full regression testing.
+
+### Prompt Injection Handling
+
+Uploaded or pasted content is untrusted evidence. Prompt-injection text inside uploaded content should be treated as data, not instruction. This is a core design assumption of the analysis pipeline.
+
+### File Analysis Limitation
+
+LUCID safely extracts readable content from supported files, but it does not execute files or perform full dynamic malware analysis.
+
+Required limitation text:
+
+```text
+LUCID analyzed the content it could read from this file. This does not guarantee that the entire file is safe.
+```
+
+Unsupported, unreadable, or ambiguous files should not be automatically treated as safe.
+
+---
+
+## 13. Troubleshooting
+
+| Issue | Likely Cause | Resolution |
+|---|---|---|
+| Google Sign-In fails in production | Production domain not authorized in Firebase | Add `lucid-dmhlvl2qqa-uc.a.run.app` to Firebase authorized domains |
+| Vertex AI request fails locally | ADC missing or wrong project selected | Run `gcloud auth application-default login` and confirm `gcloud config list` |
+| Firestore permission error | Rules/indexes not deployed or user document missing | Deploy rules/indexes and confirm authenticated user context |
+| `/health` returns 404 | No health endpoint exists | This is expected; verify the root app URL instead |
+| File upload rejected | Unsupported type or size above limit | Use supported file type and keep uploads within size limits |
+| PDF extraction fails | PDF is scanned/encrypted/unreadable | Treat as inconclusive or use external verification |
+| Wireshark scan classified as C2 | Evidence wording may imply beaconing or compromise | Verify screenshot evidence; scan-only evidence should remain Active Scanning/Medium |
+| Dashboard incident not updating | Incident may be Resolved or outside 24-hour correlation window | New analysis should create a new incident |
+| Documentation images do not render | Asset path missing in `docs/assets` or `public/docs/assets` | Copy `assets/user-guide` folder into both locations |
+
+---
+
+## 14. Release Safety Rules
+
+Before committing or pushing final work:
+
+1. Do not modify `lib/analyzeLucidContent.js` unless explicitly reopening AI/security logic.
+2. Do not restore the frozen analyzer from Git HEAD if the validated hash differs from repository history.
+3. Do not use broad delete commands during cleanup.
+4. Do not publish private notes or temporary debug artifacts.
+5. Do not claim universal security accuracy.
+6. Do not combine separate validation suites into an inflated single accuracy number.
+7. Do not document roadmap items as current capabilities.
+8. Do not replace current production screenshots with old UI screenshots.
+9. Do not add competition-specific references inside permanent product documentation.
+10. Do not commit until the final repository cleanup pass is complete.
+
+---
+
+## 15. Technical Debt
+
+| Area | Current Status | Future Action |
+|---|---|---|
+| Vertex AI SDK | Current SDK path emits deprecation/removal warning | Migrate to `@google/genai` and rerun all regression suites |
+| File coverage | MVP supports common readable formats | Add XLSX, email formats, archive recursion, macro extraction, native PCAP |
+| Dynamic malware behavior | Files are not executed | Add sandbox/dynamic analysis only with strict safety controls |
+| Threat intelligence | No live reputation enrichment in MVP | Add IOC, URL reputation, domain age, and external intelligence enrichment |
+| Observability | Basic deployment/log checks | Add structured latency, error, model-cost, and request monitoring |
+| Enterprise security | Single-user-per-org model | Add RBAC, audit logs, SSO/SAML, enterprise tenant management |
+| Fingerprinting | Text fingerprint collapses whitespace | Improve code-sensitive fingerprinting for whitespace-sensitive evidence |
+
+---
+
+## 16. Final Cleanup Checklist
+
+Final cleanup should happen only after documentation and submission assets are complete.
+
+Classify each item before deleting:
+
+```text
+KEEP          required source/app/documentation
+KEEP PRIVATE  useful internal evidence, not public GitHub
+DELETE        temporary/debug/old duplicate
+REVIEW        inspect before deciding
+```
+
+### Likely Cleanup Candidates
+
+```text
+apply_lucid_attachment_state_fix.sh
+apply_lucid_selected_attachment_fix.sh
+update_lucid_final_documentation.sh
+old updater scripts
+*.bak
+*.before_*
+temporary screenshots
+test upload files
+old handbook drafts
+old generated docs
+ui-backup-before-redesign/
+```
+
+### Files to Protect
+
+```text
+README.md
+RUNBOOK.md
+docs/
+public/
+server.js
+package.json
+package-lock.json
+lib/
+scratch/
+firestore.rules
+firestore.indexes.json
+firebase.json
+Dockerfile
+```
+
+### Final Git Review
+
+```bash
+git status --short
+git diff --check
+shasum -a 256 lib/analyzeLucidContent.js
+```
+
+Only after this review should final staging, commit, and push be performed.
+
+---
+
+## 17. Closing Notes
+
+This runbook is intentionally operational. It does not replace the Technical Handbook, User Guide, Accuracy Report, or Test Cases. Its purpose is to help a maintainer safely run, verify, deploy, troubleshoot, and release LUCID without accidentally changing the validated analyzer or publishing incomplete/private artifacts.
+

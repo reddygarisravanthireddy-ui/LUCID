@@ -7,3 +7,14 @@ scratch
 RUNBOOK.md
 .firebaserc
 firebase.json
+
+# LUCID local validation / backup artifacts — exclude from production image
+ChatGPT Image*.png
+*.bak
+*.backup
+*.before_*
+*.before-*
+*.before*
+apply_lucid_*fix.sh
+lucid_vulnerable.js
+ui-backup-before-redesign/
