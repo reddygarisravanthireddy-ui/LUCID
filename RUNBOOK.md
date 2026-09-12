@@ -566,66 +566,7 @@ Before committing or pushing final work:
 
 ---
 
-## 16. Final Cleanup Checklist
-
-Final cleanup should happen only after documentation and submission assets are complete.
-
-Classify each item before deleting:
-
-```text
-KEEP          required source/app/documentation
-KEEP PRIVATE  useful internal evidence, not public GitHub
-DELETE        temporary/debug/old duplicate
-REVIEW        inspect before deciding
-```
-
-### Likely Cleanup Candidates
-
-```text
-apply_lucid_attachment_state_fix.sh
-apply_lucid_selected_attachment_fix.sh
-update_lucid_final_documentation.sh
-old updater scripts
-*.bak
-*.before_*
-temporary screenshots
-test upload files
-old handbook drafts
-old generated docs
-ui-backup-before-redesign/
-```
-
-### Files to Protect
-
-```text
-README.md
-RUNBOOK.md
-docs/
-public/
-server.js
-package.json
-package-lock.json
-lib/
-scratch/
-firestore.rules
-firestore.indexes.json
-firebase.json
-Dockerfile
-```
-
-### Final Git Review
-
-```bash
-git status --short
-git diff --check
-shasum -a 256 lib/analyzeLucidContent.js
-```
-
-Only after this review should final staging, commit, and push be performed.
-
----
-
-## 17. Closing Notes
+## 16. Closing Notes
 
 This runbook is intentionally operational. It does not replace the Technical Handbook, User Guide, Accuracy Report, or Test Cases. Its purpose is to help a maintainer safely run, verify, deploy, troubleshoot, and release LUCID without accidentally changing the validated analyzer or publishing incomplete/private artifacts.
 
