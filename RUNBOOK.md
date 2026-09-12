@@ -46,14 +46,15 @@ This runbook explains how to operate, deploy, verify, and troubleshoot LUCID. It
 5. Firebase Configuration
 6. Application Startup
 7. Validation Commands
-8. Deployment Workflow
-9. Production Verification Checklist
-10. Documentation Synchronization
-11. Known Operational Behavior
-12. Troubleshooting
-13. Release Safety Rules
-14. Technical Debt
-15. Final Cleanup Checklist
+8. Benchmark and Validation Commands
+9. Deployment Workflow
+10. Production Verification Checklist
+11. Documentation Synchronization
+12. Known Operational Behavior
+13. Troubleshooting
+14. Release Safety Rules
+15. Technical Debt
+16. Closing Notes
 
 ---
 
